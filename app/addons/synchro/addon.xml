@@ -1,0 +1,28 @@
+<?xml version="1.0"?>
+<addon scheme="4.0">
+    <id>synchro</id>
+    <version>1.0</version>
+    <priority>10000</priority>
+    <position>0</position>
+    <default_language>en</default_language>
+    <status>active</status>
+
+    <autoload>
+        <psr4 prefix="Tygh\Addons\Synchro\">src</psr4>
+    </autoload>
+    <bootstrap>\Tygh\Addons\Synchro\Bootstrap</bootstrap>
+    <installer>\Tygh\Addons\Synchro\Installer</installer>
+
+    <settings>
+        <sections>
+            <section id="general">
+                <items>
+                    <item id="launch_handler">
+                        <type>info</type>
+                        <handler>fn_clear_cron_info</handler>
+                    </item>
+                </items>
+            </section>
+        </sections>
+    </settings>
+</addon>

@@ -1,0 +1,169 @@
+msgid ""
+msgstr "Project-Id-Version: tygh\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Language-Team: English\n"
+"Language: en_US\n"
+
+msgctxt "Addons::name::synchro"
+msgid "Synchro"
+msgstr "Synchro"
+
+msgctxt "Addons::description::synchro"
+msgid "My addon description"
+msgstr "My addon description"
+
+msgctxt "SettingsOptions::synchro::launch_handler"
+msgid "Run cron"
+msgstr "Run cron"
+
+msgctxt "Languages::synchro.cron_script_manager"
+msgid "Cron script manager"
+msgstr "Cron script manager"
+
+msgctxt "Languages::synchro.week_days"
+msgid "Week days"
+msgstr "Week days"
+
+msgctxt "Languages::synchro.month_days"
+msgid "Month days"
+msgstr "Month days"
+
+msgctxt "Languages::synchro.task_time"
+msgid "Task time"
+msgstr "Task time"
+
+msgctxt "Languages::synchro.monday"
+msgid "Monday"
+msgstr "Monday"
+
+msgctxt "Languages::synchro.tuesday"
+msgid "Tuesday"
+msgstr "Tuesday"
+
+msgctxt "Languages::synchro.wednesday"
+msgid "Wednesday"
+msgstr "Wednesday"
+
+msgctxt "Languages::synchro.thursday"
+msgid "Thursday"
+msgstr "Thursday"
+
+msgctxt "Languages::synchro.friday"
+msgid "Friday"
+msgstr "Friday"
+
+msgctxt "Languages::synchro.saturday"
+msgid "Saturday"
+msgstr "Saturday"
+
+msgctxt "Languages::synchro.sunday"
+msgid "Sunday"
+msgstr "Sunday"
+
+msgctxt "Languages::synchro.last_launch"
+msgid "Last launch"
+msgstr "Last launch"
+
+msgctxt "Languages::synchro.launch_now"
+msgid "Launch now"
+msgstr "Launch now"
+
+msgctxt "Languages::synchro.refresh_time"
+msgid "Refresh time"
+msgstr "Refresh time"
+
+msgctxt "Languages::synchro.cron_script_manager_run_info"
+msgid ""
+"The script should be added to crontab in order that it could be executed one time in a minute:\n"
+"<b>[cron_set_string]</b>"
+msgstr ""
+"The script should be added to crontab in order that it could be executed one time in a minute:\n"
+"<b>[cron_set_string]</b>"
+
+msgctxt "Languages::synchro.cron_script_type_tooltip"
+msgid ""
+"<b>Examples</b>:\n"
+"\n"
+"From admin area:\n"
+"<b>console.script --param=val</b> => php ./admin.php --dispatch=console.script --param=val\n"
+"\n"
+"From customer area:\n"
+"<b>console.script --param=val</b> => php ./index.php --dispatch=console.script --param=val\n"
+"\n"
+"Custom command:\n"
+"<b>php ./admin.php --dispatch=console.script --param=val</b>"
+msgstr ""
+"<b>Examples</b>:\n"
+"\n"
+"From admin area:\n"
+"<b>console.script --param=val</b> => php ./admin.php --dispatch=console.script --param=val\n"
+"\n"
+"From customer area:\n"
+"<b>console.script --param=val</b> => php ./index.php --dispatch=console.script --param=val\n"
+"\n"
+"Custom command:\n"
+"<b>php ./admin.php --dispatch=console.script --param=val</b>"
+
+msgctxt "Languages::synchro.script_is_already_running"
+msgid "The script is already running"
+msgstr "The script is already running"
+
+msgctxt "Languages::synchro.script_is_running_more_than_one_day"
+msgid "The script is running more than one day."
+msgstr "The script is running more than one day."
+
+msgctxt "Languages::synchro.inner_status_has_been_updated"
+msgid "Inner status has been updated."
+msgstr "Inner status has been updated."
+
+msgctxt "Languages::synchro.log_type_crons_manager"
+msgid "Cron script manager"
+msgstr "Cron script manager"
+
+msgctxt "Languages::synchro.log_action_launch"
+msgid "Launch"
+msgstr "Launch"
+
+msgctxt "Languages::synchro.log_action_errors"
+msgid "Errors"
+msgstr "Errors"
+
+msgctxt "Languages::synchro.execution_time"
+msgid "Execution time"
+msgstr "Execution time"
+
+msgctxt "Languages::synchro.task_has_been_executed"
+msgid "Task has been executed"
+msgstr "Task has been executed"
+
+msgctxt "Languages::synchro.run_type"
+msgid "Run type"
+msgstr "Run type"
+
+msgctxt "Languages::synchro.from_admin_area"
+msgid "From admin area"
+msgstr "From admin area"
+
+msgctxt "Languages::synchro.from_customer_area"
+msgid "From customer area"
+msgstr "From customer area"
+
+msgctxt "Languages::synchro.custom_command"
+msgid "Custom command"
+msgstr "Custom command"
+
+msgctxt "Languages::synchro.each"
+msgid "Each"
+msgstr "Each"
+
+msgctxt "Languages::synchro.add_task"
+msgid "Add task"
+msgstr "Add task"
+
+msgctxt "Languages::synchro.execution_rate"
+msgid "Execution rate"
+msgstr "Execution rate"
+
+msgctxt "Languages::synchro.my_variable"
+msgid "Custom addon variable"
+msgstr "Custom addon variable"
