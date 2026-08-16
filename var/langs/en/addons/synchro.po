@@ -156,6 +156,30 @@ msgctxt "Languages::synchro.each"
 msgid "Each"
 msgstr "Each"
 
+msgctxt "Languages::synchro.inner_status"
+msgid "Inner status"
+msgstr "Inner status"
+
+msgctxt "Languages::synchro.scheduled"
+msgid "Scheduled"
+msgstr "Scheduled"
+
+msgctxt "Languages::synchro.new_task"
+msgid "New task"
+msgstr "New task"
+
+msgctxt "Languages::synchro.in_progress"
+msgid "In progress"
+msgstr "In progress"
+
+msgctxt "Languages::synchro.hours"
+msgid "Hours"
+msgstr "Hours"
+
+msgctxt "Languages::synchro.minutes"
+msgid "Minutes"
+msgstr "Minutes"
+
 msgctxt "Languages::synchro.add_task"
 msgid "Add task"
 msgstr "Add task"

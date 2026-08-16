@@ -127,7 +127,7 @@ class CronManager
         $directions = ['asc' => 'asc', 'desc' => 'desc'];
         $condition = '';
 
-        if (isset($params['script']) && fn_string_no_empty($params['script'])) {
+        if (isset($params['script']) && fn_string_not_empty($params['script'])) {
             $condition .= $this->database->quote(
                 ' AND s.script LIKE ?l',
                 '%' . trim((string) $params['script']) . '%'

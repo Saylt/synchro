@@ -1,10 +1,5 @@
-{script src="js/picker.js"}
-{script src="js/tabs.js"}
-
 {capture name="mainbox"}
 {$synchro_cron_manager = $app['addons.synchro.cron_manager']}
-
-{include file="addons/synchro/views/cron_script_manager/components/cron_script_manager_search_form.tpl" dispatch="cron_script_manager.manage"}
 
 <form action="{""|fn_url}" method="post" name="cron_script_manager_form" id="cron_script_manager_form" class="">
 
@@ -71,7 +66,7 @@
 			{__("never")}
 		{/if}
 		{if $s.inner_status != 'scheduled'}
-			({__($s.inner_status)})
+			({__("synchro.`$s.inner_status`")})
 		{/if}
 	</td>
 	<td>
@@ -94,10 +89,19 @@
 
 {include file="common/pagination.tpl"}
 
+</form>
+
 <div class="buttons-container buttons-bg">
 	{if $scripts}
 	<div class="float-left">
-		{include file="buttons/button.tpl" but_name="dispatch[cron_script_manager.m_delete]" but_text=__("delete_selected") but_role="button_main" but_meta="cm-process-items cm-confirm"}
+		{include
+			file="buttons/button.tpl"
+			but_name="dispatch[cron_script_manager.m_delete]"
+			but_text=__("delete_selected")
+			but_role="submit-link"
+			but_target_form="cron_script_manager_form"
+			but_meta="cm-process-items cm-confirm"
+		}
 	</div>
 	{/if}
 
@@ -106,13 +110,26 @@
 			{capture name="add_script"}
 				{include file="addons/synchro/views/cron_script_manager/update.tpl"}
 			{/capture}
-			{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") text=__("new_task") content=$smarty.capture.add_script act="general"}
+{*			{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") text=__("synchro.new_task") content=$smarty.capture.add_script act="general"}*}
 		{/capture}
-		{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") act="general"}
+{*		{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") act="general"}*}
+		{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") text=__("synchro.new_task") content=$smarty.capture.add_script act="general"}
 	</div>
 </div>
 
-</form>
+{capture name="sidebar"}
+	{include
+		file="addons/synchro/views/cron_script_manager/components/cron_script_manager_search_form.tpl"
+		dispatch="cron_script_manager.manage"
+	}
+{/capture}
 
 {/capture}
-{include file="common/mainbox.tpl" title=__("synchro.cron_script_manager") content=$smarty.capture.mainbox title_extra=$smarty.capture.title_extra tools=$smarty.capture.tools}
+{include
+	file="common/mainbox.tpl"
+	title=__("synchro.cron_script_manager")
+	content=$smarty.capture.mainbox
+	title_extra=$smarty.capture.title_extra
+	tools=$smarty.capture.tools
+	sidebar=$smarty.capture.sidebar
+}
