@@ -16,5 +16,6 @@
 defined('AREA') || die('Access denied');
 
 $schema['cron_script_manager']['permissions'] = 'manage_cron_scripts';
+$schema['synchro_import']['permissions'] = 'manage_synchro_import';
 
 return $schema;

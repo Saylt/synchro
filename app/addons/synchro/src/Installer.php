@@ -14,6 +14,11 @@ use Tygh\Settings;
 class Installer implements InstallerInterface
 {
     /**
+     * Allows administrators to import data from the external API.
+     */
+    const IMPORT_PRIVILEGE = 'manage_synchro_import';
+
+    /**
      * @inheritDoc
      */
     public static function factory(ApplicationInterface $app)
@@ -34,6 +39,8 @@ class Installer implements InstallerInterface
     public function onInstall()
     {
         $this->createCronScriptsTable();
+        $this->createImportEntitiesTable();
+        $this->addImportPrivilege();
         $this->addLoggingSetting();
     }
 
@@ -43,9 +50,37 @@ class Installer implements InstallerInterface
     public function onUninstall()
     {
         db_query('DROP TABLE IF EXISTS ?:cron_scripts');
+        db_query('DROP TABLE IF EXISTS ?:synchro_import_entities');
         db_query('DELETE FROM ?:logs WHERE type = ?s', Logging::LOG_TYPE_CRON_MANAGER);
 
+        $this->removeImportPrivilege();
         $this->removeLoggingSetting();
+    }
+
+    /**
+     * Adds the privilege required to import data from the external API.
+     *
+     * @return void
+     */
+    protected function addImportPrivilege()
+    {
+        db_query('REPLACE INTO ?:privileges ?e', [
+            'privilege'  => self::IMPORT_PRIVILEGE,
+            'is_default' => 'Y',
+            'section_id' => 'addons',
+            'group_id'   => 'synchro',
+            'is_view'    => 'N',
+        ]);
+    }
+
+    /**
+     * Removes the privilege required to import data from the external API.
+     *
+     * @return void
+     */
+    protected function removeImportPrivilege()
+    {
+        db_query('DELETE FROM ?:privileges WHERE privilege = ?s', self::IMPORT_PRIVILEGE);
     }
 
     /**
@@ -64,6 +99,7 @@ CREATE TABLE IF NOT EXISTS ?:cron_scripts (
         'custom_command'
     ) NOT NULL DEFAULT 'from_admin_area',
     script varchar(255) NOT NULL DEFAULT '',
+    script_identifier varchar(255) DEFAULT NULL,
     description text NOT NULL DEFAULT '',
     status char(1) NOT NULL DEFAULT 'A',
     inner_status enum('scheduled', 'in_progress') NOT NULL DEFAULT 'scheduled',
@@ -97,7 +133,31 @@ CREATE TABLE IF NOT EXISTS ?:cron_scripts (
         '36', '37', '38', '39', '40', '41', '42', '43', '44', '45', '46', '47',
         '48', '49', '50', '51', '52', '53', '54', '55', '56', '57', '58', '59'
     ) NOT NULL DEFAULT '0',
-    PRIMARY KEY (script_id)
+    PRIMARY KEY (script_id),
+    UNIQUE KEY script_identifier (script_identifier)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
+
+        db_query($query);
+    }
+
+    /**
+     * Creates the table that stores normalized entities before importing them into CS-Cart.
+     *
+     * @return void
+     */
+    protected function createImportEntitiesTable()
+    {
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_import_entities (
+    company_id int(11) unsigned NOT NULL DEFAULT '0',
+    entity_id varchar(128) NOT NULL DEFAULT '',
+    entity_type varchar(64) NOT NULL DEFAULT '',
+    entity mediumblob NOT NULL,
+    created_at int(11) unsigned NOT NULL DEFAULT '0',
+    updated_at int(11) unsigned NOT NULL DEFAULT '0',
+    PRIMARY KEY (company_id, entity_type, entity_id),
+    KEY idx_entity_type (company_id, entity_type)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 

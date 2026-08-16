@@ -108,6 +108,10 @@ msgctxt "Languages::synchro.script_is_already_running"
 msgid "The script is already running"
 msgstr "The script is already running"
 
+msgctxt "Languages::synchro.script_already_exists"
+msgid "A task for this controller and mode already exists"
+msgstr "A task for this controller and mode already exists"
+
 msgctxt "Languages::synchro.script_is_running_more_than_one_day"
 msgid "The script is running more than one day."
 msgstr "The script is running more than one day."
@@ -191,3 +195,11 @@ msgstr "Execution rate"
 msgctxt "Languages::synchro.my_variable"
 msgid "Custom addon variable"
 msgstr "Custom addon variable"
+
+msgctxt "Languages::privileges.manage_synchro_import"
+msgid "Manage Synchro import"
+msgstr "Manage Synchro import"
+
+msgctxt "Languages::privilege_groups.synchro"
+msgid "Synchro"
+msgstr "Synchro"

@@ -4,6 +4,7 @@ namespace Tygh\Addons\Synchro;
 
 use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Database\Connection;
+use Tygh\Lock\Factory;
 use Tygh\Navigation\LastView;
 
 /**
@@ -17,10 +18,17 @@ class CronManager
 
     const MIN_SECONDS_BETWEEN_RUNS = 50;
 
+    const LOCK_PREFIX = 'synchro.cron.';
+
     /**
      * @var \Tygh\Database\Connection
      */
     protected $database;
+
+    /**
+     * @var \Tygh\Lock\Factory
+     */
+    protected $lock_factory;
 
     /**
      * @var string
@@ -49,6 +57,7 @@ class CronManager
 
     /**
      * @param \Tygh\Database\Connection $database       Database connection
+     * @param \Tygh\Lock\Factory        $lock_factory   Lock factory
      * @param string                    $root_directory Store root directory
      * @param string                    $admin_index    Administration entry point
      * @param string                    $customer_index Storefront entry point
@@ -56,12 +65,14 @@ class CronManager
      */
     public function __construct(
         Connection $database,
+        Factory $lock_factory,
         $root_directory,
         $admin_index,
         $customer_index,
         $cron_password
     ) {
         $this->database = $database;
+        $this->lock_factory = $lock_factory;
         $this->root_directory = rtrim($root_directory, '/');
         $this->admin_index = $admin_index;
         $this->customer_index = $customer_index;
@@ -316,35 +327,64 @@ class CronManager
      */
     public function launchCronScript(array $script)
     {
-        $this->database->query(
-            'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
-            [
-                'inner_status' => 'in_progress',
-                'last_launch'  => time(),
-            ],
-            $script['script_id']
-        );
+        $lock = null;
+        if (!empty($script['script_identifier'])) {
+            $lock = $this->lock_factory->createLock(
+                self::LOCK_PREFIX . $script['script_identifier'],
+                SECONDS_IN_DAY,
+                false
+            );
+            if (!$lock->acquire()) {
+                $this->logAlreadyRunningError($script);
 
-        $start_time = time();
-        $command = $this->prepareScript($script['script'], $script['script_type']);
-        $output = [];
-        exec($command, $output);
-        $execution_time = time() - $start_time;
+                return false;
+            }
+        }
 
-        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_LAUNCH, [
-            'script'         => $script['script'],
-            'type'           => $script['script_type'],
-            'execution_time' => $execution_time,
-            'output'         => $output,
-        ]);
+        $is_started = false;
+        try {
+            if ($this->hasRunningScript((string) $script['script_identifier'])) {
+                $this->logAlreadyRunningError($script);
 
-        $this->database->query(
-            'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
-            ['inner_status' => 'scheduled'],
-            $script['script_id']
-        );
+                return false;
+            }
 
-        return true;
+            $is_started = true;
+            $this->database->query(
+                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
+                [
+                    'inner_status' => 'in_progress',
+                    'last_launch'  => time(),
+                ],
+                $script['script_id']
+            );
+
+            $start_time = time();
+            $command = $this->prepareScript($script['script'], $script['script_type']);
+            $output = [];
+            exec($command, $output);
+            $execution_time = time() - $start_time;
+
+            fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_LAUNCH, [
+                'script'         => $script['script'],
+                'type'           => $script['script_type'],
+                'execution_time' => $execution_time,
+                'output'         => $output,
+            ]);
+
+            return true;
+        } finally {
+            if ($is_started) {
+                $this->database->query(
+                    'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
+                    ['inner_status' => 'scheduled'],
+                    $script['script_id']
+                );
+            }
+            if ($lock !== null) {
+                $lock->release();
+            }
+        }
     }
 
     /**
@@ -376,37 +416,52 @@ class CronManager
     }
 
     /**
-     * Checks whether a running cron script can be relaunched.
+     * Checks whether a cron script is currently running.
+     *
+     * Resets a stale state when a task has been marked as running for more than a day.
      *
      * @param array<string, array<int, string>|int|string|null> $script Cron script data
      *
      * @return bool
      */
-    public function checkCronScriptState(array $script)
+    public function isCronScriptRunning(array $script)
     {
-        if (TIME - $script['last_launch'] > SECONDS_IN_DAY) {
-            $this->database->query(
-                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
-                ['inner_status' => 'scheduled'],
-                $script['script_id']
-            );
-            fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-                'script' => $script['script'],
-                'type'   => $script['script_type'],
-                'error'  => __('synchro.script_is_running_more_than_one_day')
-                    . ' ' . __('synchro.inner_status_has_been_updated'),
-            ]);
-
+        if ($script['inner_status'] !== 'in_progress') {
+            return false;
+        }
+        if (TIME - (int) $script['last_launch'] <= SECONDS_IN_DAY) {
             return true;
         }
 
+        $this->database->query(
+            'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
+            ['inner_status' => 'scheduled'],
+            $script['script_id']
+        );
+        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
+            'script' => $script['script'],
+            'type'   => $script['script_type'],
+            'error'  => __('synchro.script_is_running_more_than_one_day')
+                . ' ' . __('synchro.inner_status_has_been_updated'),
+        ]);
+
+        return false;
+    }
+
+    /**
+     * Logs an attempt to launch an already running script.
+     *
+     * @param array<string, array<int, string>|int|string|null> $script Cron script data
+     *
+     * @return void
+     */
+    protected function logAlreadyRunningError(array $script)
+    {
         fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
             'script' => $script['script'],
             'type'   => $script['script_type'],
             'error'  => __('synchro.script_is_already_running'),
         ]);
-
-        return false;
     }
 
     /**
@@ -450,6 +505,96 @@ class CronManager
         }
 
         return $script;
+    }
+
+    /**
+     * Gets a controller and mode pair from a script command.
+     *
+     * @param string $script Script dispatch or custom command
+     * @param string $type   Script type
+     *
+     * @return string
+     */
+    protected function getScriptIdentifier($script, $type)
+    {
+        $command_parts = preg_split('/\s+/', trim($script));
+        if (!$command_parts) {
+            return '';
+        }
+
+        $dispatch = $command_parts[0];
+        if ($type === 'custom_command') {
+            $dispatch = '';
+            foreach ($command_parts as $part_index => $command_part) {
+                if (strpos($command_part, '--dispatch=') === 0) {
+                    $dispatch = substr($command_part, strlen('--dispatch='));
+                    break;
+                }
+                if ($command_part === '--dispatch' && isset($command_parts[$part_index + 1])) {
+                    $dispatch = $command_parts[$part_index + 1];
+                    break;
+                }
+            }
+        }
+
+        $dispatch = trim($dispatch, "\"'");
+        foreach (['?', '&'] as $separator) {
+            $separator_position = strpos($dispatch, $separator);
+            if ($separator_position !== false) {
+                $dispatch = substr($dispatch, 0, $separator_position);
+            }
+        }
+
+        $dispatch_parts = explode('.', $dispatch, 3);
+        if (empty($dispatch_parts[0]) || empty($dispatch_parts[1])) {
+            return '';
+        }
+
+        return $dispatch_parts[0] . '.' . $dispatch_parts[1];
+    }
+
+    /**
+     * Checks whether another task has the same controller and mode.
+     *
+     * @param string $script_identifier Script controller and mode
+     * @param int    $script_id         Cron script identifier to exclude
+     *
+     * @return bool
+     */
+    protected function hasScriptDuplicate($script_identifier, $script_id)
+    {
+        if ($script_identifier === '') {
+            return false;
+        }
+
+        return (bool) $this->database->getField(
+            'SELECT script_id FROM ?:cron_scripts'
+            . ' WHERE script_identifier = ?s AND script_id != ?i LIMIT 1',
+            $script_identifier,
+            $script_id
+        );
+    }
+
+    /**
+     * Checks whether a task with the same controller and mode is running.
+     *
+     * @param string $script_identifier Script controller and mode
+     *
+     * @return bool
+     */
+    protected function hasRunningScript($script_identifier)
+    {
+        if ($script_identifier === '') {
+            return false;
+        }
+
+        $script = $this->database->getRow(
+            'SELECT * FROM ?:cron_scripts WHERE script_identifier = ?s AND inner_status = ?s LIMIT 1',
+            $script_identifier,
+            'in_progress'
+        );
+
+        return $script ? $this->isCronScriptRunning($script) : false;
     }
 
     /**
@@ -562,6 +707,12 @@ class CronManager
      */
     public function updateScriptData(array $script_data, $script_id = 0)
     {
+        $script_identifier = $this->getScriptIdentifier($script_data['script'], $script_data['script_type']);
+        if ($this->hasScriptDuplicate($script_identifier, $script_id)) {
+            return false;
+        }
+        $script_data['script_identifier'] = $script_identifier === '' ? null : $script_identifier;
+
         $month_days_clause = '';
         $script_data['period_week_days'] = is_array($script_data['period_week_days'])
             ? implode(',', $script_data['period_week_days'])

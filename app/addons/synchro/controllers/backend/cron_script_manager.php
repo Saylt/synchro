@@ -9,7 +9,9 @@ $cron_manager = ServiceProvider::getCronManager();
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($mode === 'update') {
-        $cron_manager->updateScriptData($_REQUEST['script_data'], $_REQUEST['script_id']);
+        if (!$cron_manager->updateScriptData($_REQUEST['script_data'], $_REQUEST['script_id'])) {
+            fn_set_notification('E', __('error'), __('synchro.script_already_exists'));
+        }
     }
 
     if ($mode === 'm_delete' && !empty($_REQUEST['script_ids'])) {
@@ -41,8 +43,11 @@ if ($mode === 'manage') {
     if (!empty($_REQUEST['script_id'])) {
         $script = $cron_manager->getCronScriptData($_REQUEST['script_id']);
         if ($script) {
-            $cron_manager->launchCronScript($script);
-            fn_set_notification('N', __('notice'), __('synchro.task_has_been_executed'));
+            if ($cron_manager->launchCronScript($script)) {
+                fn_set_notification('N', __('notice'), __('synchro.task_has_been_executed'));
+            } else {
+                fn_set_notification('W', __('warning'), __('synchro.script_is_already_running'));
+            }
         }
     }
 
@@ -84,12 +89,7 @@ if ($mode === 'manage') {
             continue;
         }
 
-        if ($script['inner_status'] === 'scheduled') {
-            $cron_manager->launchCronScript($script);
-        } elseif (
-            $script['inner_status'] === 'in_progress'
-            && $cron_manager->checkCronScriptState($script)
-        ) {
+        if (!$cron_manager->isCronScriptRunning($script)) {
             $cron_manager->launchCronScript($script);
         }
     }

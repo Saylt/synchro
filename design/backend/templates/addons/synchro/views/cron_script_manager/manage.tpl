@@ -110,9 +110,7 @@
 			{capture name="add_script"}
 				{include file="addons/synchro/views/cron_script_manager/update.tpl"}
 			{/capture}
-{*			{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") text=__("synchro.new_task") content=$smarty.capture.add_script act="general"}*}
 		{/capture}
-{*		{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") act="general"}*}
 		{include file="common/popupbox.tpl" id="add_script" link_text=__("synchro.add_task") text=__("synchro.new_task") content=$smarty.capture.add_script act="general"}
 	</div>
 </div>
