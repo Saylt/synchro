@@ -14,6 +14,7 @@ use Tygh\Addons\Synchro\Convertors\ProductFeatureVariantConvertor;
 use Tygh\Addons\Synchro\Convertors\WarehouseConvertor;
 use Tygh\Addons\Synchro\HookHandlers\LoggingHookHandler;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Registry;
 use Tygh\Tygh;
 
@@ -46,10 +47,15 @@ class ServiceProvider implements ServiceProviderInterface
             return new ImportEntityRepository($app['db']);
         };
 
+        $app['addons.synchro.repository.product_feature_mapping'] = static function (Container $app) {
+            return new ProductFeatureMappingRepository($app['db']);
+        };
+
         $app['addons.synchro.convertors.product'] = static function (Container $app) {
             return new ProductConvertor(
                 $app['addons.synchro.repository.import_entity'],
-                fn_get_runtime_company_id()
+                fn_get_runtime_company_id(),
+                $app['addons.synchro.convertors.product_feature']
             );
         };
 
@@ -60,12 +66,18 @@ class ServiceProvider implements ServiceProviderInterface
             );
         };
 
-        $app['addons.synchro.convertors.manufacturer'] = static function () {
-            return new ManufacturerConvertor();
+        $app['addons.synchro.convertors.manufacturer'] = static function (Container $app) {
+            return new ManufacturerConvertor(
+                $app['addons.synchro.repository.import_entity'],
+                fn_get_runtime_company_id()
+            );
         };
 
-        $app['addons.synchro.convertors.product_feature'] = static function () {
-            return new ProductFeatureConvertor();
+        $app['addons.synchro.convertors.product_feature'] = static function (Container $app) {
+            return new ProductFeatureConvertor(
+                $app['addons.synchro.repository.import_entity'],
+                fn_get_runtime_company_id()
+            );
         };
 
         $app['addons.synchro.convertors.product_feature_variant'] = static function () {
@@ -114,5 +126,21 @@ class ServiceProvider implements ServiceProviderInterface
     public static function getImportDataCommandHandler()
     {
         return Tygh::$app['addons.synchro.commands.import_data_handler'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\Repository\ImportEntityRepository
+     */
+    public static function getImportEntityRepository()
+    {
+        return Tygh::$app['addons.synchro.repository.import_entity'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository
+     */
+    public static function getProductFeatureMappingRepository()
+    {
+        return Tygh::$app['addons.synchro.repository.product_feature_mapping'];
     }
 }

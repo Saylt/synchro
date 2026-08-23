@@ -16,4 +16,19 @@ class ManufacturerDto implements RepresentEntityDto
 
     /** @var string */
     public $name;
+
+    /** @var int */
+    public $status;
+
+    /** @var string */
+    public $seo_name;
+
+    /** @var string */
+    public $description;
+
+    /** @var int */
+    public $product_count;
+
+    /** @var array<array-key, string> */
+    public $images = [];
 }

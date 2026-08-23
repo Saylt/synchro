@@ -39,7 +39,9 @@ class Installer implements InstallerInterface
     public function onInstall()
     {
         $this->createCronScriptsTable();
+        $this->createImportsTable();
         $this->createImportEntitiesTable();
+        $this->createProductFeatureMappingsTable();
         $this->addImportPrivilege();
         $this->addLoggingSetting();
     }
@@ -50,7 +52,9 @@ class Installer implements InstallerInterface
     public function onUninstall()
     {
         db_query('DROP TABLE IF EXISTS ?:cron_scripts');
+        db_query('DROP TABLE IF EXISTS ?:synchro_product_feature_mappings');
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entities');
+        db_query('DROP TABLE IF EXISTS ?:synchro_imports');
         db_query('DELETE FROM ?:logs WHERE type = ?s', Logging::LOG_TYPE_CRON_MANAGER);
 
         $this->removeImportPrivilege();
@@ -142,6 +146,29 @@ SQL;
     }
 
     /**
+     * Creates the table that stores import runs.
+     *
+     * @return void
+     */
+    protected function createImportsTable()
+    {
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_imports (
+    import_id int(11) unsigned NOT NULL AUTO_INCREMENT,
+    company_id int(11) unsigned NOT NULL DEFAULT '0',
+    entity_type varchar(64) NOT NULL DEFAULT '',
+    status char(1) NOT NULL DEFAULT 'P',
+    created_at int(11) unsigned NOT NULL DEFAULT '0',
+    completed_at int(11) unsigned NOT NULL DEFAULT '0',
+    PRIMARY KEY (import_id),
+    KEY idx_import (company_id, entity_type, status, import_id)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
+
+        db_query($query);
+    }
+
+    /**
      * Creates the table that stores normalized entities before importing them into CS-Cart.
      *
      * @return void
@@ -150,14 +177,36 @@ SQL;
     {
         $query = <<<'SQL'
 CREATE TABLE IF NOT EXISTS ?:synchro_import_entities (
+    import_id int(11) unsigned NOT NULL DEFAULT '0',
     company_id int(11) unsigned NOT NULL DEFAULT '0',
     entity_id varchar(128) NOT NULL DEFAULT '',
     entity_type varchar(64) NOT NULL DEFAULT '',
     entity mediumblob NOT NULL,
     created_at int(11) unsigned NOT NULL DEFAULT '0',
     updated_at int(11) unsigned NOT NULL DEFAULT '0',
-    PRIMARY KEY (company_id, entity_type, entity_id),
-    KEY idx_entity_type (company_id, entity_type)
+    PRIMARY KEY (import_id, entity_type, entity_id),
+    KEY idx_entity_type (company_id, entity_type, import_id)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
+
+        db_query($query);
+    }
+
+    /**
+     * Creates the table that stores mappings between imported and local product features.
+     *
+     * @return void
+     */
+    protected function createProductFeatureMappingsTable()
+    {
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_product_feature_mappings (
+    company_id int(11) unsigned NOT NULL DEFAULT '0',
+    external_feature_id varchar(128) NOT NULL DEFAULT '',
+    action varchar(16) NOT NULL DEFAULT 'skip',
+    local_feature_id int(11) unsigned NOT NULL DEFAULT '0',
+    PRIMARY KEY (company_id, external_feature_id, local_feature_id),
+    KEY idx_local_feature (company_id, local_feature_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 

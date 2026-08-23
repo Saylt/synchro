@@ -203,3 +203,63 @@ msgstr "Manage Synchro import"
 msgctxt "Languages::privilege_groups.synchro"
 msgid "Synchro"
 msgstr "Synchro"
+
+msgctxt "Languages::synchro.api_request_failed"
+msgid "Synchro API request \"[action]\" failed: [error]"
+msgstr "Synchro API request \"[action]\" failed: [error]"
+
+msgctxt "Languages::synchro.api_invalid_response"
+msgid "Synchro API returned an invalid response for \"[action]\"."
+msgstr "Synchro API returned an invalid response for \"[action]\"."
+
+msgctxt "Languages::synchro.sync_data_name"
+msgid "Synchro product feature mapping"
+msgstr "Synchro product feature mapping"
+
+msgctxt "Languages::synchro.feature_mapping_description"
+msgid "Choose how each feature from the completed Synchro product import should be processed. An imported feature can be mapped to multiple existing product features."
+msgstr "Choose how each feature from the completed Synchro product import should be processed. An imported feature can be mapped to multiple existing product features."
+
+msgctxt "Languages::synchro.imported_feature"
+msgid "Imported feature"
+msgstr "Imported feature"
+
+msgctxt "Languages::synchro.feature_group"
+msgid "Feature group"
+msgstr "Feature group"
+
+msgctxt "Languages::synchro.feature_variants_count"
+msgid "Variants"
+msgstr "Variants"
+
+msgctxt "Languages::synchro.feature_mapping_action"
+msgid "Import action"
+msgstr "Import action"
+
+msgctxt "Languages::synchro.local_features"
+msgid "Existing product features"
+msgstr "Existing product features"
+
+msgctxt "Languages::synchro.feature_mapping_action_skip"
+msgid "Skip import"
+msgstr "Skip import"
+
+msgctxt "Languages::synchro.feature_mapping_action_create"
+msgid "Create new"
+msgstr "Create new"
+
+msgctxt "Languages::synchro.feature_mapping_action_map"
+msgid "Map to existing"
+msgstr "Map to existing"
+
+msgctxt "Languages::synchro.no_completed_product_import"
+msgid "There is no completed product import available for mapping."
+msgstr "There is no completed product import available for mapping."
+
+msgctxt "Languages::synchro.feature_mappings_saved"
+msgid "Product feature mappings have been saved."
+msgstr "Product feature mappings have been saved."
+
+msgctxt "Languages::synchro.feature_mapping_import_changed"
+msgid "A newer product import is available. Refresh the page and review the mappings before saving them."
+msgstr "A newer product import is available. Refresh the page and review the mappings before saving them."

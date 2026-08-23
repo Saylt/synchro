@@ -33,7 +33,7 @@ class CategoryConvertor implements ConvertorInterface
     /**
      * @inheritDoc
      */
-    public function convert(array $data)
+    public function convert(array $data, $import_id = 0)
     {
         if (!$data) {
             return [];
@@ -48,7 +48,7 @@ class CategoryConvertor implements ConvertorInterface
         }
 
         $categories = array_values($categories);
-        $this->repository->batchSave($this->company_id, $categories);
+        $this->repository->batchSave($import_id, $this->company_id, $categories);
 
         return $categories;
     }

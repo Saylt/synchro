@@ -19,4 +19,7 @@ class ProductFeatureVariantDto implements RepresentEntityDto
 
     /** @var string */
     public $name;
+
+    /** @var bool|float|int|string|null */
+    public $value;
 }

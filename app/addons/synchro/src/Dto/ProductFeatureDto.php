@@ -14,9 +14,6 @@ class ProductFeatureDto implements RepresentEntityDto
     /** @var int */
     public $id;
 
-    /** @var bool|float|int|string|null */
-    public $value;
-
     /** @var string */
     public $name;
 
@@ -28,4 +25,7 @@ class ProductFeatureDto implements RepresentEntityDto
 
     /** @var string|null */
     public $group_name;
+
+    /** @var array<string, \Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto> */
+    public $variants = [];
 }

@@ -34,7 +34,7 @@ class ImportDataCommandHandler
             throw new DeveloperException(sprintf('Undefined convertor for entity type %s', $command->entity_type));
         }
 
-        $data = $this->convertors[$command->entity_type]->convert($command->data);
+        $data = $this->convertors[$command->entity_type]->convert($command->data, $command->import_id);
 
         return new OperationResult(true, $data);
     }
