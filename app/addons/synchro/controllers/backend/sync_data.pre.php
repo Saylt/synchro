@@ -1,7 +1,5 @@
 <?php
 
-use Tygh\Addons\Synchro\Commands\ImportDataCommand;
-use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\ServiceProvider;
 
 defined('BOOTSTRAP') or die('Access denied');
@@ -17,11 +15,7 @@ if (
     }
 
     $company_id = fn_get_runtime_company_id();
-    $import_repository = ServiceProvider::getImportEntityRepository();
-    $import_id = $import_repository->findLatestCompletedImportId(
-        $company_id,
-        ImportDataCommand::ENTITY_PRODUCTS
-    );
+    list($import_id, $features) = ServiceProvider::getImportedProductFeatureReader()->readLatest($company_id);
     $request_import_id = isset($_REQUEST['import_id']) && is_numeric($_REQUEST['import_id'])
         ? (int) $_REQUEST['import_id']
         : 0;
@@ -32,7 +26,6 @@ if (
         return [CONTROLLER_STATUS_OK, 'sync_data.update?sync_provider_id=synchro'];
     }
 
-    $features = $import_repository->findAllByEntityType($import_id, ProductFeatureDto::ENTITY_TYPE);
     $available_feature_ids = [];
 
     /** @var \Tygh\Addons\Synchro\Dto\ProductFeatureDto $feature */

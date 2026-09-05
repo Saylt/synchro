@@ -4,6 +4,7 @@ namespace Tygh\Addons\Synchro\Convertors;
 
 use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\CronManager;
 
 /**
  * Converts category data received from the external API.
@@ -21,19 +22,26 @@ class CategoryConvertor implements ConvertorInterface
     private $company_id;
 
     /**
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository $repository Import entity repository
-     * @param int                                                    $company_id Company identifier
+     * @var \Tygh\Addons\Synchro\CronManager
      */
-    public function __construct(ImportEntityRepository $repository, $company_id)
+    private $cron_manager;
+
+    /**
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository $repository   Import entity repository
+     * @param int                                                    $company_id   Company identifier
+     * @param \Tygh\Addons\Synchro\CronManager                       $cron_manager Cron task manager
+     */
+    public function __construct(ImportEntityRepository $repository, $company_id, CronManager $cron_manager)
     {
         $this->repository = $repository;
         $this->company_id = $company_id;
+        $this->cron_manager = $cron_manager;
     }
 
     /**
      * @inheritDoc
      */
-    public function convert(array $data, $import_id = 0)
+    public function convert(array $data, $import_id = 0, $cron_script_id = 0, $import_process_id = 0)
     {
         if (!$data) {
             return [];
@@ -44,9 +52,10 @@ class CategoryConvertor implements ConvertorInterface
         $source_categories = $data['data'];
 
         foreach ($source_categories as $source_category) {
-            $this->convertCategory($source_category, null, $categories);
+            $this->convertCategory($source_category, null, $categories, $cron_script_id);
         }
 
+        $this->cron_manager->ensureTaskCanContinue($cron_script_id);
         $categories = array_values($categories);
         $this->repository->batchSave($import_id, $this->company_id, $categories);
 
@@ -59,18 +68,24 @@ class CategoryConvertor implements ConvertorInterface
      * @param array<string, array|int|string>                     $source_category API category data
      * @param \Tygh\Addons\Synchro\Dto\CategoryDto|null           $parent_category Parent category DTO
      * @param array<string, \Tygh\Addons\Synchro\Dto\CategoryDto> $categories      Converted categories
+     * @param int                                                 $cron_script_id  Cron script identifier
      *
      * @return void
      *
      * @psalm-suppress PossiblyInvalidArgument
      * @psalm-suppress PossiblyInvalidIterator
      * @psalm-suppress PossiblyInvalidPropertyAssignmentValue
+     *
+     * @throws \Tygh\Addons\Synchro\Exceptions\TaskInterruptedException When task interruption is requested.
      */
     private function convertCategory(
         array $source_category,
         CategoryDto $parent_category = null,
-        array &$categories
+        array &$categories,
+        $cron_script_id = 0
     ) {
+        $this->cron_manager->ensureTaskCanContinue($cron_script_id);
+
         $category = new CategoryDto();
         $category->id = $source_category['id'];
         $category->parent_id = $parent_category ? $parent_category->id : null;
@@ -89,7 +104,7 @@ class CategoryConvertor implements ConvertorInterface
         $children = $source_category['children'];
 
         foreach ($children as $child) {
-            $this->convertCategory($child, $category, $categories);
+            $this->convertCategory($child, $category, $categories, $cron_script_id);
         }
     }
 }

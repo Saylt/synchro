@@ -10,7 +10,7 @@ class WarehouseConvertor implements ConvertorInterface
     /**
      * @inheritDoc
      */
-    public function convert(array $data, $import_id = 0)
+    public function convert(array $data, $import_id = 0, $cron_script_id = 0, $import_process_id = 0)
     {
         return $data;
     }

@@ -41,6 +41,7 @@ class Installer implements InstallerInterface
         $this->createCronScriptsTable();
         $this->createImportsTable();
         $this->createImportEntitiesTable();
+        $this->createImportEntityMapTable();
         $this->createProductFeatureMappingsTable();
         $this->addImportPrivilege();
         $this->addLoggingSetting();
@@ -53,6 +54,7 @@ class Installer implements InstallerInterface
     {
         db_query('DROP TABLE IF EXISTS ?:cron_scripts');
         db_query('DROP TABLE IF EXISTS ?:synchro_product_feature_mappings');
+        db_query('DROP TABLE IF EXISTS ?:synchro_import_entity_map');
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entities');
         db_query('DROP TABLE IF EXISTS ?:synchro_imports');
         db_query('DELETE FROM ?:logs WHERE type = ?s', Logging::LOG_TYPE_CRON_MANAGER);
@@ -97,16 +99,21 @@ class Installer implements InstallerInterface
         $query = <<<'SQL'
 CREATE TABLE IF NOT EXISTS ?:cron_scripts (
     script_id int(11) unsigned NOT NULL AUTO_INCREMENT,
-    script_type enum(
-        'from_admin_area',
-        'from_customer_area',
-        'custom_command'
-    ) NOT NULL DEFAULT 'from_admin_area',
     script varchar(255) NOT NULL DEFAULT '',
-    script_identifier varchar(255) DEFAULT NULL,
     description text NOT NULL DEFAULT '',
     status char(1) NOT NULL DEFAULT 'A',
-    inner_status enum('scheduled', 'in_progress') NOT NULL DEFAULT 'scheduled',
+    run_mode enum('periodic', 'once') NOT NULL DEFAULT 'periodic',
+    inner_status enum(
+        'scheduled', 'queued', 'in_progress', 'waiting_children', 'stopping',
+        'completed', 'partial_success', 'failed', 'cancelled'
+    ) NOT NULL DEFAULT 'scheduled',
+    progress_status varchar(255) DEFAULT NULL,
+    use_portions char(1) NOT NULL DEFAULT 'N',
+    pages_per_portion int(11) unsigned NOT NULL DEFAULT '100',
+    page_limit int(11) unsigned NOT NULL DEFAULT '200',
+    max_parallel_processes int(11) unsigned NOT NULL DEFAULT '3',
+    is_test_import char(1) NOT NULL DEFAULT 'N',
+    test_page int(11) unsigned NOT NULL DEFAULT '1',
     created int(11) NOT NULL DEFAULT '0',
     last_launch int(11) NOT NULL DEFAULT '0',
     period_month_days set(
@@ -138,7 +145,7 @@ CREATE TABLE IF NOT EXISTS ?:cron_scripts (
         '48', '49', '50', '51', '52', '53', '54', '55', '56', '57', '58', '59'
     ) NOT NULL DEFAULT '0',
     PRIMARY KEY (script_id),
-    UNIQUE KEY script_identifier (script_identifier)
+    UNIQUE KEY script (script)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 
@@ -155,13 +162,31 @@ SQL;
         $query = <<<'SQL'
 CREATE TABLE IF NOT EXISTS ?:synchro_imports (
     import_id int(11) unsigned NOT NULL AUTO_INCREMENT,
+    parent_import_id int(11) unsigned NOT NULL DEFAULT '0',
+    cron_script_id int(11) unsigned NOT NULL DEFAULT '0',
     company_id int(11) unsigned NOT NULL DEFAULT '0',
     entity_type varchar(64) NOT NULL DEFAULT '',
-    status char(1) NOT NULL DEFAULT 'P',
+    source_type enum('full', 'test') NOT NULL DEFAULT 'full',
+    status enum(
+        'queued', 'processing', 'completed', 'partial_success',
+        'failed', 'stopping', 'cancelled'
+    ) NOT NULL DEFAULT 'processing',
+    page_from int(11) unsigned NOT NULL DEFAULT '0',
+    page_to int(11) unsigned NOT NULL DEFAULT '0',
+    current_page int(11) unsigned NOT NULL DEFAULT '0',
+    page_limit int(11) unsigned NOT NULL DEFAULT '0',
+    total_items int(11) unsigned NOT NULL DEFAULT '0',
+    total_pages int(11) unsigned NOT NULL DEFAULT '0',
+    max_parallel_processes int(11) unsigned NOT NULL DEFAULT '1',
+    error_message text NOT NULL,
     created_at int(11) unsigned NOT NULL DEFAULT '0',
+    started_at int(11) unsigned NOT NULL DEFAULT '0',
+    updated_at int(11) unsigned NOT NULL DEFAULT '0',
     completed_at int(11) unsigned NOT NULL DEFAULT '0',
     PRIMARY KEY (import_id),
-    KEY idx_import (company_id, entity_type, status, import_id)
+    KEY idx_import (company_id, entity_type, status, import_id),
+    KEY idx_parent_status (parent_import_id, status, page_from),
+    KEY idx_cron_parent (cron_script_id, parent_import_id, import_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 
@@ -186,6 +211,30 @@ CREATE TABLE IF NOT EXISTS ?:synchro_import_entities (
     updated_at int(11) unsigned NOT NULL DEFAULT '0',
     PRIMARY KEY (import_id, entity_type, entity_id),
     KEY idx_entity_type (company_id, entity_type, import_id)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
+
+        db_query($query);
+    }
+
+    /**
+     * Creates the table that maps external entities to CS-Cart entities.
+     *
+     * @return void
+     */
+    protected function createImportEntityMapTable()
+    {
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_import_entity_map (
+    company_id int(11) unsigned NOT NULL DEFAULT '0',
+    entity_type varchar(64) NOT NULL DEFAULT '',
+    external_id varchar(128) NOT NULL DEFAULT '',
+    local_id int(11) unsigned NOT NULL DEFAULT '0',
+    entity_name varchar(255) NOT NULL DEFAULT '',
+    full_updated_timestamp int(11) unsigned NOT NULL DEFAULT '0',
+    actualized_timestamp int(11) unsigned NOT NULL DEFAULT '0',
+    PRIMARY KEY (company_id, entity_type, external_id),
+    KEY idx_local_entity (company_id, entity_type, local_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 

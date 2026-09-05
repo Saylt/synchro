@@ -29,10 +29,7 @@ class LoggingHookHandler
             return;
         }
 
-        $content = [
-            'script' => $data['script']
-                . (!empty($data['type']) ? ' (' . __('synchro.' . $data['type']) . ')' : ''),
-        ];
+        $content = ['script' => $data['script']];
 
         if ($action === Logging::ACTION_LAUNCH) {
             $execution_seconds = (int) $data['execution_time'];

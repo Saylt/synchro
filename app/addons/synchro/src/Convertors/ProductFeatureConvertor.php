@@ -31,11 +31,13 @@ class ProductFeatureConvertor implements ConvertorInterface
     }
 
     /**
-     * @inheritDoc
+     * @param array<array-key, array|bool|float|int|string|null> $data           External API data
+     * @param int                                                $import_id      Import identifier
+     * @param int                                                $cron_script_id Cron script identifier
      *
      * @return array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>
      */
-    public function convert(array $data, $import_id = 0)
+    public function convert(array $data, $import_id = 0, $cron_script_id = 0, $import_process_id = 0)
     {
         if (!$data) {
             return [];

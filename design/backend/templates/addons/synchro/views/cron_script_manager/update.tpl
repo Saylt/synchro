@@ -1,4 +1,5 @@
 {$synchro_cron_manager = $app['addons.synchro.cron_manager']}
+{$run_mode = $script_data.run_mode|default:"periodic"}
 
 <form action="{""|fn_url}"
     method="post"
@@ -11,31 +12,33 @@
 
     <fieldset>
         <div class="control-group">
-            <label for="cron_script_script" class="control-label cm-required">{__("script")}</label>
+            <label for="cron_script_script" class="control-label cm-required">{__("synchro.task")}</label>
             <div class="controls">
-                <input
-                    type="text"
+                <select
                     name="script_data[script]"
                     id="cron_script_script"
-                    value="{$script_data.script}"
                     class="span9 main-input"
-                />
+                    onchange="Tygh.$('#synchro_product_import_settings').toggle(this.value === 'synchro_import.products');"
+                >
+                    <option value="">--</option>
+                    {foreach $synchro_cron_manager->getAvailableScripts() as $dispatch => $task}
+                        <option value="{$dispatch}"{if $script_data.script === $dispatch} selected="selected"{/if}>{__($task.name)}</option>
+                    {/foreach}
+                </select>
             </div>
         </div>
 
         <div class="control-group">
-            <label for="cron_script_script_type" class="control-label">
-                {__("synchro.run_type")}
-                {include
-                    file="common/tooltip.tpl"
-                    tooltip=__("synchro.cron_script_type_tooltip")|nl2br
-                }
-            </label>
+            <label for="cron_script_run_mode" class="control-label">{__("synchro.run_mode")}</label>
             <div class="controls">
-                <select name="script_data[script_type]" id="cron_script_script_type" class="input-large">
-                    {foreach from=$synchro_cron_manager->getSetElements("script_type", "cron_scripts") item="m"}
-                        <option value="{$m}"{if $script_data.script_type == $m} selected="selected"{/if}>{__("synchro.{$m}")}</option>
-                    {/foreach}
+                <select
+                    name="script_data[run_mode]"
+                    id="cron_script_run_mode"
+                    class="input-large"
+                    onchange="Tygh.$('#cron_script_period').toggle(this.value === 'periodic'); Tygh.$('#cron_script_period_week_days_label').toggleClass('cm-required', this.value === 'periodic');"
+                >
+                    <option value="periodic"{if $run_mode === "periodic"} selected="selected"{/if}>{__("synchro.periodic")}</option>
+                    <option value="once"{if $run_mode === "once"} selected="selected"{/if}>{__("synchro.once")}</option>
                 </select>
             </div>
         </div>
@@ -68,6 +71,13 @@
             </div>
 
             <div class="control-group">
+                <span class="control-label">{__("synchro.progress_status")}</span>
+                <div class="controls">
+                    <p>{$script_data.progress_status|default:"—"}</p>
+                </div>
+            </div>
+
+            <div class="control-group">
                 <span class="control-label">{__("created")}</span>
                 <div class="controls">
                     <p>{$script_data.created|date_format:"`$settings.Appearance.date_format`, `$settings.Appearance.time_format`"}</p>
@@ -89,9 +99,115 @@
         {/if}
     </fieldset>
 
-    {include file="common/subheader.tpl" title=__("period")}
+    <div
+        id="synchro_product_import_settings"
+        {if $script_data.script !== "synchro_import.products"}class="hidden"{/if}
+    >
+        {include file="common/subheader.tpl" title=__("synchro.product_import_settings")}
 
-    <fieldset>
+        <fieldset>
+            <div class="control-group">
+                <label for="synchro_use_portions" class="control-label">{__("synchro.use_portions")}</label>
+                <div class="controls">
+                    <input type="hidden" name="script_data[use_portions]" value="N">
+                    <input
+                        type="checkbox"
+                        id="synchro_use_portions"
+                        name="script_data[use_portions]"
+                        value="Y"
+                        {if $script_data.use_portions === "Y"}checked="checked"{/if}
+                        onchange="Tygh.$('.synchro-portion-setting').toggle(this.checked);"
+                    >
+                    <p class="muted description">{__("synchro.use_portions_description")}</p>
+                </div>
+            </div>
+
+            <div class="control-group synchro-portion-setting{if $script_data.use_portions !== "Y"} hidden{/if}">
+                <label for="synchro_pages_per_portion" class="control-label">{__("synchro.pages_per_portion")}</label>
+                <div class="controls">
+                    <input
+                        type="number"
+                        min="1"
+                        id="synchro_pages_per_portion"
+                        name="script_data[pages_per_portion]"
+                        value="{$script_data.pages_per_portion|default:100}"
+                        class="input-small"
+                    >
+                </div>
+            </div>
+
+            <div
+                id="synchro_page_limit_setting"
+                class="control-group{if $script_data.is_test_import === "Y"} hidden{/if}"
+            >
+                <label for="synchro_page_limit" class="control-label">{__("synchro.page_limit")}</label>
+                <div class="controls">
+                    <input
+                        type="number"
+                        min="1"
+                        id="synchro_page_limit"
+                        name="script_data[page_limit]"
+                        value="{$script_data.page_limit|default:200}"
+                        class="input-small"
+                    >
+                </div>
+            </div>
+
+            <div class="control-group synchro-portion-setting{if $script_data.use_portions !== "Y"} hidden{/if}">
+                <label for="synchro_max_parallel_processes" class="control-label">
+                    {__("synchro.max_parallel_processes")}
+                </label>
+                <div class="controls">
+                    <input
+                        type="number"
+                        min="1"
+                        id="synchro_max_parallel_processes"
+                        name="script_data[max_parallel_processes]"
+                        value="{$script_data.max_parallel_processes|default:3}"
+                        class="input-small"
+                    >
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="synchro_is_test_import" class="control-label">{__("synchro.test_import")}</label>
+                <div class="controls">
+                    <input type="hidden" name="script_data[is_test_import]" value="N">
+                    <input
+                        type="checkbox"
+                        id="synchro_is_test_import"
+                        name="script_data[is_test_import]"
+                        value="Y"
+                        {if $script_data.is_test_import === "Y"}checked="checked"{/if}
+                        onchange="Tygh.$('#synchro_test_page_setting').toggle(this.checked); Tygh.$('#synchro_page_limit_setting').toggle(!this.checked);"
+                    >
+                    <p class="muted description">{__("synchro.test_import_description")}</p>
+                </div>
+            </div>
+
+            <div
+                id="synchro_test_page_setting"
+                class="control-group{if $script_data.is_test_import !== "Y"} hidden{/if}"
+            >
+                <label for="synchro_test_page" class="control-label">{__("synchro.test_page")}</label>
+                <div class="controls">
+                    <input
+                        type="number"
+                        min="1"
+                        id="synchro_test_page"
+                        name="script_data[test_page]"
+                        value="{$script_data.test_page|default:1}"
+                        class="input-small"
+                    >
+                </div>
+            </div>
+        </fieldset>
+    </div>
+
+    <div id="cron_script_period"{if $run_mode === "once"} class="hidden"{/if}>
+        {include file="common/subheader.tpl" title=__("period")}
+
+        <fieldset>
         <div class="row-fluid">
             <div class="span6">
                 <div class="control-group">
@@ -116,8 +232,13 @@
 
             <div class="span6">
                 <div class="control-group">
-                    <label for="cron_script_period_week_days" class="control-label cm-required">{__("synchro.week_days")}</label>
+                    <label
+                        for="cron_script_period_week_days"
+                        id="cron_script_period_week_days_label"
+                        class="control-label{if $run_mode === "periodic"} cm-required{/if}"
+                    >{__("synchro.week_days")}</label>
                     <div class="controls">
+                        <input type="hidden" name="script_data[period_week_days]" value="">
                         <select
                             name="script_data[period_week_days][]"
                             id="cron_script_period_week_days"
@@ -192,7 +313,8 @@
                 </div>
             </div>
         </div>
-    </fieldset>
+        </fieldset>
+    </div>
 
     <div class="buttons-container">
         {if $script_data}

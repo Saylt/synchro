@@ -13,11 +13,17 @@
  ****************************************************************************/
 
 
-defined('AREA') || die('Access denied');
+defined('BOOTSTRAP') or die('Access denied');
 
 $schema['cron_script_manager'] = [
     'allow' => [
         'launcher' => true,
+        'run'      => true,
+    ],
+];
+$schema['synchro_import'] = [
+    'allow' => [
+        'product_process' => true,
     ],
 ];
 

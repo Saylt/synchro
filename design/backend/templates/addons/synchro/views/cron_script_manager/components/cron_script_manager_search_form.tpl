@@ -13,17 +13,21 @@
 
         {capture name="simple_search"}
             <div class="sidebar-field">
-                <label for="elm_script">{__("script")}</label>
-                <input type="text" name="script" id="elm_script" value="{$search.script}" />
+                <label for="elm_script">{__("synchro.task")}</label>
+                <select name="script" id="elm_script">
+                    <option value="">--</option>
+                    {foreach $synchro_cron_manager->getAvailableScripts() as $dispatch => $task}
+                        <option value="{$dispatch}"{if $search.script === $dispatch} selected="selected"{/if}>{__($task.name)}</option>
+                    {/foreach}
+                </select>
             </div>
 
             <div class="sidebar-field">
-                <label for="elm_script_type">{__("type")}</label>
-                <select name="script_type" id="elm_script_type">
+                <label for="elm_run_mode">{__("synchro.run_mode")}</label>
+                <select name="run_mode" id="elm_run_mode">
                     <option value="">--</option>
-                    {foreach from=$synchro_cron_manager->getSetElements("script_type", "cron_scripts") item="script_type"}
-                        <option value="{$script_type}"{if $search.script_type == $script_type} selected="selected"{/if}>{__("synchro.{$script_type}")}</option>
-                    {/foreach}
+                    <option value="periodic"{if $search.run_mode === "periodic"} selected="selected"{/if}>{__("synchro.periodic")}</option>
+                    <option value="once"{if $search.run_mode === "once"} selected="selected"{/if}>{__("synchro.once")}</option>
                 </select>
             </div>
 

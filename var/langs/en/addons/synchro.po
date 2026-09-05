@@ -80,30 +80,6 @@ msgstr ""
 "The script should be added to crontab in order that it could be executed one time in a minute:\n"
 "<b>[cron_set_string]</b>"
 
-msgctxt "Languages::synchro.cron_script_type_tooltip"
-msgid ""
-"<b>Examples</b>:\n"
-"\n"
-"From admin area:\n"
-"<b>console.script --param=val</b> => php ./admin.php --dispatch=console.script --param=val\n"
-"\n"
-"From customer area:\n"
-"<b>console.script --param=val</b> => php ./index.php --dispatch=console.script --param=val\n"
-"\n"
-"Custom command:\n"
-"<b>php ./admin.php --dispatch=console.script --param=val</b>"
-msgstr ""
-"<b>Examples</b>:\n"
-"\n"
-"From admin area:\n"
-"<b>console.script --param=val</b> => php ./admin.php --dispatch=console.script --param=val\n"
-"\n"
-"From customer area:\n"
-"<b>console.script --param=val</b> => php ./index.php --dispatch=console.script --param=val\n"
-"\n"
-"Custom command:\n"
-"<b>php ./admin.php --dispatch=console.script --param=val</b>"
-
 msgctxt "Languages::synchro.script_is_already_running"
 msgid "The script is already running"
 msgstr "The script is already running"
@@ -136,25 +112,77 @@ msgctxt "Languages::synchro.execution_time"
 msgid "Execution time"
 msgstr "Execution time"
 
-msgctxt "Languages::synchro.task_has_been_executed"
-msgid "Task has been executed"
-msgstr "Task has been executed"
+msgctxt "Languages::synchro.task_has_been_launched"
+msgid "Task has been launched in background"
+msgstr "Task has been launched in background"
 
-msgctxt "Languages::synchro.run_type"
-msgid "Run type"
-msgstr "Run type"
+msgctxt "Languages::synchro.task"
+msgid "Task"
+msgstr "Task"
 
-msgctxt "Languages::synchro.from_admin_area"
-msgid "From admin area"
-msgstr "From admin area"
+msgctxt "Languages::synchro.progress_status"
+msgid "Progress status"
+msgstr "Progress status"
 
-msgctxt "Languages::synchro.from_customer_area"
-msgid "From customer area"
-msgstr "From customer area"
+msgctxt "Languages::synchro.run_mode"
+msgid "Run mode"
+msgstr "Run mode"
 
-msgctxt "Languages::synchro.custom_command"
-msgid "Custom command"
-msgstr "Custom command"
+msgctxt "Languages::synchro.periodic"
+msgid "By schedule"
+msgstr "By schedule"
+
+msgctxt "Languages::synchro.once"
+msgid "As soon as possible"
+msgstr "As soon as possible"
+
+msgctxt "Languages::synchro.import_products"
+msgid "Import products"
+msgstr "Import products"
+
+msgctxt "Languages::synchro.import_categories"
+msgid "Import categories"
+msgstr "Import categories"
+
+msgctxt "Languages::synchro.import_manufacturers"
+msgid "Import manufacturers"
+msgstr "Import manufacturers"
+
+msgctxt "Languages::synchro.import_features"
+msgid "Import product features"
+msgstr "Import product features"
+
+msgctxt "Languages::synchro.import_feature_variants"
+msgid "Import product feature variants"
+msgstr "Import product feature variants"
+
+msgctxt "Languages::synchro.import_warehouses"
+msgid "Import warehouses"
+msgstr "Import warehouses"
+
+msgctxt "Languages::synchro.importing_products"
+msgid "Importing products: page [page] of [pages]"
+msgstr "Importing products: page [page] of [pages]"
+
+msgctxt "Languages::synchro.importing_categories"
+msgid "Importing categories"
+msgstr "Importing categories"
+
+msgctxt "Languages::synchro.importing_manufacturers"
+msgid "Importing manufacturers"
+msgstr "Importing manufacturers"
+
+msgctxt "Languages::synchro.importing_features"
+msgid "Importing product features"
+msgstr "Importing product features"
+
+msgctxt "Languages::synchro.importing_feature_variants"
+msgid "Importing product feature variants"
+msgstr "Importing product feature variants"
+
+msgctxt "Languages::synchro.importing_warehouses"
+msgid "Importing warehouses"
+msgstr "Importing warehouses"
 
 msgctxt "Languages::synchro.each"
 msgid "Each"
@@ -175,6 +203,34 @@ msgstr "New task"
 msgctxt "Languages::synchro.in_progress"
 msgid "In progress"
 msgstr "In progress"
+
+msgctxt "Languages::synchro.queued"
+msgid "Queued"
+msgstr "Queued"
+
+msgctxt "Languages::synchro.completed"
+msgid "Completed"
+msgstr "Completed"
+
+msgctxt "Languages::synchro.stopping"
+msgid "Stopping"
+msgstr "Stopping"
+
+msgctxt "Languages::synchro.cancelled"
+msgid "Cancelled"
+msgstr "Cancelled"
+
+msgctxt "Languages::synchro.interrupt"
+msgid "Interrupt"
+msgstr "Interrupt"
+
+msgctxt "Languages::synchro.task_interruption_requested"
+msgid "Task interruption has been requested."
+msgstr "Task interruption has been requested."
+
+msgctxt "Languages::synchro.task_cannot_be_interrupted"
+msgid "The task is not queued or running and cannot be interrupted."
+msgstr "The task is not queued or running and cannot be interrupted."
 
 msgctxt "Languages::synchro.hours"
 msgid "Hours"
@@ -263,3 +319,107 @@ msgstr "Product feature mappings have been saved."
 msgctxt "Languages::synchro.feature_mapping_import_changed"
 msgid "A newer product import is available. Refresh the page and review the mappings before saving them."
 msgstr "A newer product import is available. Refresh the page and review the mappings before saving them."
+
+msgctxt "Languages::synchro.product_import_settings"
+msgid "Product import settings"
+msgstr "Product import settings"
+
+msgctxt "Languages::synchro.use_portions"
+msgid "Portioned import"
+msgstr "Portioned import"
+
+msgctxt "Languages::synchro.use_portions_description"
+msgid "Split the product catalog into independent page ranges."
+msgstr "Split the product catalog into independent page ranges."
+
+msgctxt "Languages::synchro.pages_per_portion"
+msgid "Pages per portion"
+msgstr "Pages per portion"
+
+msgctxt "Languages::synchro.page_limit"
+msgid "Products per API page"
+msgstr "Products per API page"
+
+msgctxt "Languages::synchro.max_parallel_processes"
+msgid "Maximum parallel processes"
+msgstr "Maximum parallel processes"
+
+msgctxt "Languages::synchro.test_import"
+msgid "Test import"
+msgstr "Test import"
+
+msgctxt "Languages::synchro.test_import_description"
+msgid "Import only one selected page with a fixed limit of 10 products."
+msgstr "Import only one selected page with a fixed limit of 10 products."
+
+msgctxt "Languages::synchro.test_page"
+msgid "Test page"
+msgstr "Test page"
+
+msgctxt "Languages::synchro.waiting_children"
+msgid "Waiting for import processes"
+msgstr "Waiting for import processes"
+
+msgctxt "Languages::synchro.partial_success"
+msgid "Partial success"
+msgstr "Partial success"
+
+msgctxt "Languages::synchro.failed"
+msgid "Failed"
+msgstr "Failed"
+
+msgctxt "Languages::synchro.processing"
+msgid "Processing"
+msgstr "Processing"
+
+msgctxt "Languages::synchro.import_processes"
+msgid "Import processes"
+msgstr "Import processes"
+
+msgctxt "Languages::synchro.page_range"
+msgid "Page range"
+msgstr "Page range"
+
+msgctxt "Languages::synchro.current_page"
+msgid "Current page"
+msgstr "Current page"
+
+msgctxt "Languages::synchro.retry"
+msgid "Retry"
+msgstr "Retry"
+
+msgctxt "Languages::synchro.import_process_retried"
+msgid "The import process has been queued again."
+msgstr "The import process has been queued again."
+
+msgctxt "Languages::synchro.import_process_cannot_be_retried"
+msgid "The import process cannot be retried."
+msgstr "The import process cannot be retried."
+
+msgctxt "Languages::synchro.retry_failed_processes"
+msgid "Retry failed processes"
+msgstr "Retry failed processes"
+
+msgctxt "Languages::synchro.import_processes_retried"
+msgid "Failed import processes have been queued again."
+msgstr "Failed import processes have been queued again."
+
+msgctxt "Languages::synchro.completed_processes"
+msgid "completed [completed] of [total]"
+msgstr "completed [completed] of [total]"
+
+msgctxt "Languages::synchro.import_plan_summary"
+msgid "[items] products, [pages] pages, limit [limit]"
+msgstr "[items] products, [pages] pages, limit [limit]"
+
+msgctxt "Languages::synchro.product_import_error.product_not_found"
+msgid "The mapped product for external ID [external_id] was not found."
+msgstr "The mapped product for external ID [external_id] was not found."
+
+msgctxt "Languages::synchro.product_import_error.warehouse_not_resolved"
+msgid "Warehouse [warehouse] could not be resolved for product with external ID [external_id]."
+msgstr "Warehouse [warehouse] could not be resolved for product with external ID [external_id]."
+
+msgctxt "Languages::synchro.product_import_error.update_failed"
+msgid "Product with external ID [external_id] could not be updated."
+msgstr "Product with external ID [external_id] could not be updated."

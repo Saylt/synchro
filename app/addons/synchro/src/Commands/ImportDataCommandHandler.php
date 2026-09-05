@@ -27,6 +27,8 @@ class ImportDataCommandHandler
      * @param \Tygh\Addons\Synchro\Commands\ImportDataCommand $command Import command
      *
      * @return \Tygh\Common\OperationResult
+     *
+     * @throws \Tygh\Addons\Synchro\Exceptions\TaskInterruptedException When task interruption is requested.
      */
     public function handle(ImportDataCommand $command)
     {
@@ -34,7 +36,12 @@ class ImportDataCommandHandler
             throw new DeveloperException(sprintf('Undefined convertor for entity type %s', $command->entity_type));
         }
 
-        $data = $this->convertors[$command->entity_type]->convert($command->data, $command->import_id);
+        $data = $this->convertors[$command->entity_type]->convert(
+            $command->data,
+            $command->import_id,
+            $command->cron_script_id,
+            $command->import_process_id
+        );
 
         return new OperationResult(true, $data);
     }

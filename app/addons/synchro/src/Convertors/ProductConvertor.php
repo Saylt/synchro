@@ -7,6 +7,8 @@ use Tygh\Addons\Synchro\Dto\ManufacturerDto;
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Dto\WarehouseDto;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\CronManager;
+use Tygh\Addons\Synchro\ImportProcessManager;
 
 /**
  * Converts product data received from the external API.
@@ -22,25 +24,37 @@ class ProductConvertor implements ConvertorInterface
     /** @var \Tygh\Addons\Synchro\Convertors\ProductFeatureConvertor */
     private $product_feature_convertor;
 
+    /** @var \Tygh\Addons\Synchro\CronManager */
+    private $cron_manager;
+
+    /** @var \Tygh\Addons\Synchro\ImportProcessManager */
+    private $import_process_manager;
+
     /**
      * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository  $repository                Import entity repository
      * @param int                                                     $company_id                Company identifier
      * @param \Tygh\Addons\Synchro\Convertors\ProductFeatureConvertor $product_feature_convertor Product feature convertor
+     * @param \Tygh\Addons\Synchro\CronManager                        $cron_manager              Cron task manager
+     * @param \Tygh\Addons\Synchro\ImportProcessManager               $import_process_manager    Import process manager
      */
     public function __construct(
         ImportEntityRepository $repository,
         $company_id,
-        ProductFeatureConvertor $product_feature_convertor
+        ProductFeatureConvertor $product_feature_convertor,
+        CronManager $cron_manager,
+        ImportProcessManager $import_process_manager
     ) {
         $this->repository = $repository;
         $this->company_id = $company_id;
         $this->product_feature_convertor = $product_feature_convertor;
+        $this->cron_manager = $cron_manager;
+        $this->import_process_manager = $import_process_manager;
     }
 
     /**
      * @inheritDoc
      */
-    public function convert(array $data, $import_id = 0)
+    public function convert(array $data, $import_id = 0, $cron_script_id = 0, $import_process_id = 0)
     {
         if (!$data) {
             return [];
@@ -51,6 +65,8 @@ class ProductConvertor implements ConvertorInterface
         $source_products = $data['data'];
 
         foreach ($source_products as $source_product) {
+            $this->ensureImportCanContinue($cron_script_id, $import_process_id);
+
             $product = new ProductDto();
             $product->id = $source_product['id'];
             $product->source_error = $source_product['error'];
@@ -81,6 +97,13 @@ class ProductConvertor implements ConvertorInterface
             );
 
             foreach ($source_product['rests'] as $source_warehouse) {
+                if ($source_warehouse['name'] === null) {
+                    continue;
+                }
+                if (!$source_warehouse['rest']) {
+                    continue;
+                }
+
                 $warehouse = new WarehouseDto();
                 $warehouse->id = $source_warehouse['name'];
                 $warehouse->amount = $source_warehouse['rest'];
@@ -93,9 +116,31 @@ class ProductConvertor implements ConvertorInterface
             $products[] = $product;
         }
 
+        $this->ensureImportCanContinue($cron_script_id, $import_process_id);
         $this->product_feature_convertor->save($import_id);
         $this->repository->batchSave($import_id, $this->company_id, $products);
 
         return $products;
+    }
+
+    /**
+     * Checks the child process state or falls back to the cron task state.
+     *
+     * @param int $cron_script_id    Cron script identifier
+     * @param int $import_process_id Import process identifier
+     *
+     * @return void
+     *
+     * @throws \Tygh\Addons\Synchro\Exceptions\TaskInterruptedException When interruption is requested.
+     */
+    private function ensureImportCanContinue($cron_script_id, $import_process_id)
+    {
+        if ($import_process_id) {
+            $this->import_process_manager->ensureProcessCanContinue($import_process_id);
+
+            return;
+        }
+
+        $this->cron_manager->ensureTaskCanContinue($cron_script_id);
     }
 }

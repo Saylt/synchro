@@ -1,7 +1,5 @@
 <?php
 
-use Tygh\Addons\Synchro\Commands\ImportDataCommand;
-use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Addons\Synchro\ServiceProvider;
 
@@ -15,12 +13,7 @@ if (
     && $_REQUEST['sync_provider_id'] === 'synchro'
 ) {
     $company_id = fn_get_runtime_company_id();
-    $import_repository = ServiceProvider::getImportEntityRepository();
-    $import_id = $import_repository->findLatestCompletedImportId(
-        $company_id,
-        ImportDataCommand::ENTITY_PRODUCTS
-    );
-    $features = $import_repository->findAllByEntityType($import_id, ProductFeatureDto::ENTITY_TYPE);
+    list($import_id, $features) = ServiceProvider::getImportedProductFeatureReader()->readLatest($company_id);
     $external_feature_ids = [];
 
     /** @var \Tygh\Addons\Synchro\Dto\ProductFeatureDto $feature */

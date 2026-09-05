@@ -17,6 +17,7 @@
 		<input type="checkbox" name="check_all" value="Y" title="{__("check_uncheck_all")}" class="checkbox cm-check-items" /></th>
 	<th>
 		<a class="{$ajax_class}{if $search.sort_by == "script"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=script&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("script")}</a></th>
+	<th>{__("synchro.run_mode")}</th>
 	<th>
 		<a class="{$ajax_class}{if $search.sort_by == "month_days"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=month_days&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("synchro.month_days")}</a></th>
 	<th>
@@ -25,6 +26,7 @@
 		<a class="{$ajax_class}{if $search.sort_by == "rate"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=rate&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("synchro.execution_rate")}</a></th>
 	<th>
 		<a class="{$ajax_class}{if $search.sort_by == "last_launch"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=last_launch&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("synchro.last_launch")}</a></th>
+	<th>{__("synchro.progress_status")}</th>
 	<th>
 		<a class="{$ajax_class}{if $search.sort_by == "status"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=status&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("status")}</a></th>
 	<th>&nbsp;</th>
@@ -38,23 +40,28 @@
 		<div>{$s.script}</div>
 		{if $s.description}<span class="product-code-label">{$s.description}</span>{/if}
 	</td>
+	<td>{__("synchro.{$s.run_mode}")}</td>
 	<td>
-		<div>{","|implode:$s.period_month_days|default:__("all")}</div>
+		<div>{if $s.run_mode === "periodic"}{","|implode:$s.period_month_days|default:__("all")}{else}—{/if}</div>
 	</td>
 	<td>
-		<div>{Tygh\Addons\Synchro\CronManager::showShortWeekdays($s.period_week_days)}</div>
+		<div>{if $s.run_mode === "periodic"}{Tygh\Addons\Synchro\CronManager::showShortWeekdays($s.period_week_days)}{else}—{/if}</div>
 	</td>
 	<td>
 		<div>
-			{$s.period_hours_begin}:00 {if $s.period_hours_begin != $s.period_hours_end}&ndash; {$s.period_hours_end}:00{/if}
-			<br />
-			{if $s.refresh_hours || $s.refresh_minutes}
-				{__("synchro.each")}
-				{if $s.refresh_hours}
-					{$s.refresh_hours} {__("hours")}
-				{/if}
-				{if $s.refresh_minutes}
-					{$s.refresh_minutes} {__("minutes")}
+			{if $s.run_mode === "once"}
+				{__("synchro.once")}
+			{else}
+				{$s.period_hours_begin}:00 {if $s.period_hours_begin != $s.period_hours_end}&ndash; {$s.period_hours_end}:00{/if}
+				<br />
+				{if $s.refresh_hours || $s.refresh_minutes}
+					{__("synchro.each")}
+					{if $s.refresh_hours}
+						{$s.refresh_hours} {__("hours")}
+					{/if}
+					{if $s.refresh_minutes}
+						{$s.refresh_minutes} {__("minutes")}
+					{/if}
 				{/if}
 			{/if}
 		</div>
@@ -69,20 +76,86 @@
 			({__("synchro.`$s.inner_status`")})
 		{/if}
 	</td>
+	<td>{$s.progress_status|default:"—"}</td>
 	<td>
 		{include file="common/select_popup.tpl" id=$s.script_id status=$s.status object_id_name="script_id" table="cron_scripts"}
 	</td>
 	<td class="nowrap">
 		{capture name="tools_items"}
-			<li><a class="cm-confirm" href="{"cron_script_manager.launch?script_id=`$s.script_id`"|fn_url}">{__("synchro.launch_now")}</a></li>
+			{if $synchro_import_processes[$s.script_id] && $synchro_import_processes[$s.script_id].parent.status|in_array:["partial_success", "failed", "cancelled"]}
+				<li><a href="{"cron_script_manager.retry_import?script_id=`$s.script_id`"|fn_url}">{__("synchro.retry_failed_processes")}</a></li>
+			{/if}
+			{if $s.inner_status|in_array:["queued", "in_progress", "waiting_children"]}
+				<li><a class="cm-confirm" href="{"cron_script_manager.interrupt?script_id=`$s.script_id`"|fn_url}">{__("synchro.interrupt")}</a></li>
+			{elseif $s.inner_status !== "stopping"}
+				<li><a class="cm-confirm" href="{"cron_script_manager.launch?script_id=`$s.script_id`"|fn_url}">{__("synchro.launch_now")}</a></li>
+			{/if}
 			<li><a class="cm-confirm" href="{"cron_script_manager.delete?script_id=`$s.script_id`"|fn_url}">{__("delete")}</a></li>
 		{/capture}
 		{include file="common/table_tools_list.tpl" prefix=$s.script_id tools_list=$smarty.capture.tools_items href="cron_script_manager.update?script_id=`$s.script_id`" popup=true act="edit" id="cron_script_`$s.script_id`" text="{__("editing_task")}: `$s.script`"}
 	</td>
 </tr>
+{if $synchro_import_processes[$s.script_id]}
+	{$import_process_group = $synchro_import_processes[$s.script_id]}
+	<tr class="no-border">
+		<td></td>
+		<td colspan="9">
+			<div class="well well-small">
+				<div>
+					<strong>{__("synchro.import_processes")}</strong>
+					<span class="muted">
+						#{$import_process_group.parent.import_id} —
+						{__("synchro.`$import_process_group.parent.status`")};
+						{__("synchro.completed_processes", [
+							"[completed]" => $import_process_group.completed_count,
+							"[total]" => $import_process_group.total_count
+						])};
+						{__("synchro.import_plan_summary", [
+							"[items]" => $import_process_group.parent.total_items,
+							"[pages]" => $import_process_group.parent.total_pages,
+							"[limit]" => $import_process_group.parent.page_limit
+						])}
+					</span>
+				</div>
+				<table class="table table-condensed table-middle">
+					<thead>
+					<tr>
+						<th>{__("synchro.page_range")}</th>
+						<th>{__("synchro.current_page")}</th>
+						<th>{__("status")}</th>
+						<th>{__("error")}</th>
+						<th></th>
+					</tr>
+					</thead>
+					<tbody>
+					{foreach $import_process_group.children as $import_process}
+						<tr>
+							<td>{$import_process.page_from}–{$import_process.page_to}</td>
+							<td>{$import_process.current_page|default:"—"}</td>
+							<td>{__("synchro.`$import_process.status`")}</td>
+							<td>{$import_process.error_message|default:"—"}</td>
+							<td class="right nowrap">
+								{if $import_process.status|in_array:["queued", "processing"]}
+									<a class="btn cm-confirm" href="{"cron_script_manager.interrupt_process?import_id=`$import_process.import_id`"|fn_url}">
+										{__("synchro.interrupt")}
+									</a>
+								{elseif $import_process.status|in_array:["failed", "cancelled"]}
+									<a class="btn" href="{"cron_script_manager.retry_process?import_id=`$import_process.import_id`"|fn_url}">
+										{__("synchro.retry")}
+									</a>
+								{/if}
+							</td>
+						</tr>
+					{/foreach}
+					</tbody>
+				</table>
+			</div>
+		</td>
+	</tr>
+{/if}
 {foreachelse}
 <tr class="no-items">
-	<td colspan="11"><p>{__("no_data")}</p></td>
+	<td colspan="10"><p>{__("no_data")}</p></td>
 </tr>
 {/foreach}
 </table>
