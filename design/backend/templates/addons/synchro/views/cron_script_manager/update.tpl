@@ -235,7 +235,7 @@
                     <label
                         for="cron_script_period_week_days"
                         id="cron_script_period_week_days_label"
-                        class="control-label{if $run_mode === "periodic"} cm-required{/if}"
+                        class="control-label{if $run_mode === "periodic"}{/if}"
                     >{__("synchro.week_days")}</label>
                     <div class="controls">
                         <input type="hidden" name="script_data[period_week_days]" value="">

@@ -1,7 +1,7 @@
 <?php
 
-use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Addons\Synchro\ServiceProvider;
+use Tygh\Enum\ProductFeatures;
 
 defined('BOOTSTRAP') or die('Access denied');
 
@@ -25,25 +25,38 @@ if (
         $company_id,
         $external_feature_ids
     );
+    $local_feature_ids = array_values(array_unique(array_filter($stored_mappings)));
+    $local_features = $local_feature_ids
+        ? Tygh::$app['db']->getSingleHash(
+            'SELECT features.feature_id, descriptions.description FROM ?:product_features AS features'
+            . ' LEFT JOIN ?:product_features_descriptions AS descriptions'
+            . ' ON descriptions.feature_id = features.feature_id AND descriptions.lang_code = ?s'
+            . ' WHERE features.feature_id IN (?n)',
+            ['feature_id', 'description'],
+            CART_LANGUAGE,
+            $local_feature_ids
+        )
+        : [];
     $feature_mappings = [];
 
     /** @var \Tygh\Addons\Synchro\Dto\ProductFeatureDto $feature */
     foreach ($features as $feature) {
         $external_feature_id = $feature->getEntityId();
-        $mapping = isset($stored_mappings[$external_feature_id])
+        $local_feature_id = isset($stored_mappings[$external_feature_id])
             ? $stored_mappings[$external_feature_id]
-            : [
-                'action'            => ProductFeatureMappingRepository::ACTION_SKIP,
-                'local_feature_ids' => [],
-            ];
+            : null;
 
         $feature_mappings[] = [
-            'external_id'       => $external_feature_id,
-            'name'              => $feature->name,
-            'group_name'        => $feature->group_name,
-            'variants_count'    => count($feature->variants),
-            'action'            => $mapping['action'],
-            'local_feature_ids' => $mapping['local_feature_ids'],
+            'external_id'             => $external_feature_id,
+            'name'                    => $feature->name,
+            'group_name'              => $feature->group_name,
+            'variants_count'          => count($feature->variants),
+            'local_feature_id'        => $local_feature_id,
+            'local_feature_name'      => $local_feature_id > 0 && isset($local_features[$local_feature_id])
+                ? $local_features[$local_feature_id]
+                : '',
+            'is_local_feature_missing' => $local_feature_id > 0
+                && !array_key_exists($local_feature_id, $local_features),
         ];
     }
 
@@ -54,10 +67,9 @@ if (
     Tygh::$app['view']->assign([
         'synchro_import_id'        => $import_id,
         'synchro_feature_mappings' => $feature_mappings,
-        'synchro_mapping_actions'  => [
-            ProductFeatureMappingRepository::ACTION_SKIP   => __('synchro.feature_mapping_action_skip'),
-            ProductFeatureMappingRepository::ACTION_CREATE => __('synchro.feature_mapping_action_create'),
-            ProductFeatureMappingRepository::ACTION_MAP    => __('synchro.feature_mapping_action_map'),
+        'synchro_target_feature_types' => [
+            ProductFeatures::TEXT_SELECTBOX,
+            ProductFeatures::NUMBER_SELECTBOX,
         ],
     ]);
 }

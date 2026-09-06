@@ -273,8 +273,8 @@ msgid "Synchro product feature mapping"
 msgstr "Synchro product feature mapping"
 
 msgctxt "Languages::synchro.feature_mapping_description"
-msgid "Choose how each feature from the completed Synchro product import should be processed. An imported feature can be mapped to multiple existing product features."
-msgstr "Choose how each feature from the completed Synchro product import should be processed. An imported feature can be mapped to multiple existing product features."
+msgid "Select one or more imported features and map them to one store feature, create a new store feature, or skip them."
+msgstr "Select one or more imported features and map them to one store feature, create a new store feature, or skip them."
 
 msgctxt "Languages::synchro.imported_feature"
 msgid "Imported feature"
@@ -288,25 +288,65 @@ msgctxt "Languages::synchro.feature_variants_count"
 msgid "Variants"
 msgstr "Variants"
 
-msgctxt "Languages::synchro.feature_mapping_action"
-msgid "Import action"
-msgstr "Import action"
+msgctxt "Languages::synchro.local_feature"
+msgid "Store feature"
+msgstr "Store feature"
 
-msgctxt "Languages::synchro.local_features"
-msgid "Existing product features"
-msgstr "Existing product features"
+msgctxt "Languages::synchro.new_feature_name"
+msgid "New feature name"
+msgstr "New feature name"
 
-msgctxt "Languages::synchro.feature_mapping_action_skip"
-msgid "Skip import"
-msgstr "Skip import"
+msgctxt "Languages::synchro.map_selected_features"
+msgid "Map selected"
+msgstr "Map selected"
 
-msgctxt "Languages::synchro.feature_mapping_action_create"
-msgid "Create new"
-msgstr "Create new"
+msgctxt "Languages::synchro.create_and_map_features"
+msgid "Create and map"
+msgstr "Create and map"
 
-msgctxt "Languages::synchro.feature_mapping_action_map"
-msgid "Map to existing"
-msgstr "Map to existing"
+msgctxt "Languages::synchro.skip_selected_features"
+msgid "Skip selected"
+msgstr "Skip selected"
+
+msgctxt "Languages::synchro.feature_mapping_unresolved"
+msgid "Not mapped"
+msgstr "Not mapped"
+
+msgctxt "Languages::synchro.feature_mapping_skipped"
+msgid "Skipped"
+msgstr "Skipped"
+
+msgctxt "Languages::synchro.feature_mapping_missing_target"
+msgid "Feature #[feature_id] no longer exists"
+msgstr "Feature #[feature_id] no longer exists"
+
+msgctxt "Languages::synchro.feature_mapping_selection_required"
+msgid "Select at least one imported feature."
+msgstr "Select at least one imported feature."
+
+msgctxt "Languages::synchro.feature_mapping_invalid_target"
+msgid "Select an existing text or number selectbox feature."
+msgstr "Select an existing text or number selectbox feature."
+
+msgctxt "Languages::synchro.feature_mapping_non_numeric_values"
+msgid "A number selectbox cannot receive non-numeric imported values."
+msgstr "A number selectbox cannot receive non-numeric imported values."
+
+msgctxt "Languages::synchro.feature_mapping_name_required"
+msgid "Enter a name for the new feature."
+msgstr "Enter a name for the new feature."
+
+msgctxt "Languages::synchro.feature_mapping_creation_failed"
+msgid "The product feature could not be created."
+msgstr "The product feature could not be created."
+
+msgctxt "Languages::synchro.feature_mapping_save_failed"
+msgid "The selected feature mappings could not be saved."
+msgstr "The selected feature mappings could not be saved."
+
+msgctxt "Languages::synchro.feature_mapping_invalid_action"
+msgid "Select a mapping action."
+msgstr "Select a mapping action."
 
 msgctxt "Languages::synchro.no_completed_product_import"
 msgid "There is no completed product import available for mapping."
@@ -319,6 +359,30 @@ msgstr "Product feature mappings have been saved."
 msgctxt "Languages::synchro.feature_mapping_import_changed"
 msgid "A newer product import is available. Refresh the page and review the mappings before saving them."
 msgstr "A newer product import is available. Refresh the page and review the mappings before saving them."
+
+msgctxt "Languages::synchro.product_feature_import_error.target_not_found"
+msgid "Store feature #[feature_id] mapped to imported feature [external_id] no longer exists."
+msgstr "Store feature #[feature_id] mapped to imported feature [external_id] no longer exists."
+
+msgctxt "Languages::synchro.product_feature_import_error.unsupported_target"
+msgid "Store feature #[feature_id] mapped to imported feature [external_id] has an unsupported type."
+msgstr "Store feature #[feature_id] mapped to imported feature [external_id] has an unsupported type."
+
+msgctxt "Languages::synchro.product_feature_import_error.non_numeric_variant"
+msgid "Imported feature [external_id] contains a non-numeric value: [value]."
+msgstr "Imported feature [external_id] contains a non-numeric value: [value]."
+
+msgctxt "Languages::synchro.product_feature_import_error.variant_creation_failed"
+msgid "Variant [value] could not be prepared for store feature #[feature_id]."
+msgstr "Variant [value] could not be prepared for store feature #[feature_id]."
+
+msgctxt "Languages::synchro.product_import_error.feature_conflict"
+msgid "Product [external_id] contains conflicting values for store feature #[feature_id]."
+msgstr "Product [external_id] contains conflicting values for store feature #[feature_id]."
+
+msgctxt "Languages::synchro.product_import_error.feature_mapping_not_found"
+msgid "Product [external_id] references imported feature [feature_external_id] without a mapping."
+msgstr "Product [external_id] references imported feature [feature_external_id] without a mapping."
 
 msgctxt "Languages::synchro.product_import_settings"
 msgid "Product import settings"

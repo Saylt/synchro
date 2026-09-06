@@ -45,7 +45,7 @@
 		<div>{if $s.run_mode === "periodic"}{","|implode:$s.period_month_days|default:__("all")}{else}—{/if}</div>
 	</td>
 	<td>
-		<div>{if $s.run_mode === "periodic"}{Tygh\Addons\Synchro\CronManager::showShortWeekdays($s.period_week_days)}{else}—{/if}</div>
+		<div>{if $s.run_mode === "periodic"}{$synchro_cron_manager->showShortWeekdays($s.period_week_days)}{else}—{/if}</div>
 	</td>
 	<td>
 		<div>

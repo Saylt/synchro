@@ -39,6 +39,18 @@ class ImportedProductFeatureReader
             return [0, []];
         }
 
+        return [$parent_import_id, $this->readByParentImportId($parent_import_id)];
+    }
+
+    /**
+     * Reads and combines product features from a specified parent import.
+     *
+     * @param int $parent_import_id Parent import identifier
+     *
+     * @return array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>
+     */
+    public function readByParentImportId($parent_import_id)
+    {
         $child_import_ids = $this->repository->findCompletedChildIds($parent_import_id);
         $portion_features = $this->repository->findAllByEntityTypeFromImports(
             $child_import_ids,
@@ -65,6 +77,6 @@ class ImportedProductFeatureReader
             );
         }
 
-        return [$parent_import_id, array_values($features)];
+        return array_values($features);
     }
 }

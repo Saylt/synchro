@@ -26,43 +26,62 @@ if (
         return [CONTROLLER_STATUS_OK, 'sync_data.update?sync_provider_id=synchro'];
     }
 
-    $available_feature_ids = [];
+    $requested_feature_ids = [];
+
+    if (isset($_REQUEST['external_feature_ids']) && is_array($_REQUEST['external_feature_ids'])) {
+        foreach ($_REQUEST['external_feature_ids'] as $external_feature_id) {
+            if (is_int($external_feature_id) || is_string($external_feature_id)) {
+                $requested_feature_ids[$external_feature_id] = true;
+            }
+        }
+    }
+
+    $selected_features = [];
 
     /** @var \Tygh\Addons\Synchro\Dto\ProductFeatureDto $feature */
     foreach ($features as $feature) {
-        $available_feature_ids[$feature->getEntityId()] = true;
+        if (isset($requested_feature_ids[$feature->getEntityId()])) {
+            $selected_features[] = $feature;
+        }
     }
 
-    $mappings = [];
-    $raw_mappings = isset($_REQUEST['feature_mappings']) && is_array($_REQUEST['feature_mappings'])
-        ? $_REQUEST['feature_mappings']
-        : [];
+    $mapping_action = isset($_REQUEST['mapping_action']) && is_string($_REQUEST['mapping_action'])
+        ? $_REQUEST['mapping_action']
+        : '';
+    $mapping_manager = ServiceProvider::getProductFeatureMappingManager();
+    $local_feature_id = isset($_REQUEST['local_feature_id'])
+        && (is_int($_REQUEST['local_feature_id']) || is_string($_REQUEST['local_feature_id']))
+        && is_numeric($_REQUEST['local_feature_id'])
+        ? (int) $_REQUEST['local_feature_id']
+        : 0;
 
-    foreach ($raw_mappings as $external_feature_id => $mapping) {
-        if (!isset($available_feature_ids[$external_feature_id]) || !is_array($mapping)) {
-            continue;
-        }
+    if ($mapping_action === 'skip') {
+        $result = $mapping_manager->skip($company_id, $selected_features);
+    } elseif ($mapping_action === 'map') {
+        $result = $mapping_manager->map(
+            $company_id,
+            $selected_features,
+            $local_feature_id
+        );
+    } elseif ($mapping_action === 'create') {
+        $result = $mapping_manager->createAndMap(
+            $company_id,
+            $selected_features,
+            isset($_REQUEST['new_feature_name']) && is_string($_REQUEST['new_feature_name'])
+                ? $_REQUEST['new_feature_name']
+                : ''
+        );
+    } else {
+        fn_set_notification('E', __('error'), __('synchro.feature_mapping_invalid_action'));
 
-        $local_feature_ids = [];
-
-        if (isset($mapping['local_feature_ids']) && is_array($mapping['local_feature_ids'])) {
-            foreach ($mapping['local_feature_ids'] as $local_feature_id) {
-                if (is_int($local_feature_id) || is_string($local_feature_id)) {
-                    $local_feature_ids[] = $local_feature_id;
-                }
-            }
-        }
-
-        $mappings[(string) $external_feature_id] = [
-            'action' => isset($mapping['action']) && is_string($mapping['action'])
-                ? $mapping['action']
-                : '',
-            'local_feature_ids' => $local_feature_ids,
-        ];
+        return [CONTROLLER_STATUS_OK, 'sync_data.update?sync_provider_id=synchro'];
     }
 
-    ServiceProvider::getProductFeatureMappingRepository()->replaceMappings($company_id, $mappings);
-    fn_set_notification('N', __('notice'), __('synchro.feature_mappings_saved'));
+    if ($result->isSuccess()) {
+        fn_set_notification('N', __('notice'), __('synchro.feature_mappings_saved'));
+    } else {
+        $result->showNotifications();
+    }
 
     return [CONTROLLER_STATUS_OK, 'sync_data.update?sync_provider_id=synchro'];
 }

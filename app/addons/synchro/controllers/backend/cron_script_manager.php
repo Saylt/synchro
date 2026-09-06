@@ -139,7 +139,7 @@ if ($mode === 'manage') {
     exit;
 } elseif ($mode === 'launcher') {
     @set_time_limit(0);
-    @ini_set('memory_limit', '256M');
+    @ini_set('memory_limit', '512M');
 
     if (
         !isset($_REQUEST['cron_password'])

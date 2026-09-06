@@ -252,9 +252,8 @@ SQL;
 CREATE TABLE IF NOT EXISTS ?:synchro_product_feature_mappings (
     company_id int(11) unsigned NOT NULL DEFAULT '0',
     external_feature_id varchar(128) NOT NULL DEFAULT '',
-    action varchar(16) NOT NULL DEFAULT 'skip',
     local_feature_id int(11) unsigned NOT NULL DEFAULT '0',
-    PRIMARY KEY (company_id, external_feature_id, local_feature_id),
+    PRIMARY KEY (company_id, external_feature_id),
     KEY idx_local_feature (company_id, local_feature_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;

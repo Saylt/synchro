@@ -118,6 +118,41 @@ class ImportEntityMapRepository
     }
 
     /**
+     * Creates or updates mappings in one batch without changing update timestamps.
+     *
+     * @param int    $company_id  Company identifier
+     * @param string $entity_type Entity type
+     * @param array  $mappings    Mapping data indexed by external identifier
+     *
+     * @psalm-param array<string, array{local_id: int, entity_name: string}> $mappings
+     *
+     * @return int
+     */
+    public function saveMany($company_id, $entity_type, array $mappings)
+    {
+        $records = [];
+
+        foreach ($mappings as $external_id => $mapping) {
+            $records[] = [
+                'company_id'  => $company_id,
+                'entity_type' => $entity_type,
+                'external_id' => $external_id,
+                'local_id'    => $mapping['local_id'],
+                'entity_name' => $mapping['entity_name'],
+            ];
+        }
+
+        return $records
+            ? $this->database->replaceInto(
+                self::TABLE_NAME,
+                $records,
+                true,
+                ['local_id', 'entity_name']
+            )
+            : 0;
+    }
+
+    /**
      * Stores the timestamp of the last successful full entity update.
      *
      * @param int      $company_id  Company identifier

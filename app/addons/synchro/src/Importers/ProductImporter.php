@@ -3,8 +3,10 @@
 namespace Tygh\Addons\Synchro\Importers;
 
 use Tygh\Addons\Synchro\Dto\ProductDto;
+use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Common\OperationResult;
 use Tygh\Database\Connection;
 use Tygh\Enum\ObjectStatuses;
@@ -20,6 +22,9 @@ class ProductImporter
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository */
     private $mapping_repository;
 
+    /** @var \Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository */
+    private $feature_mapping_repository;
+
     /** @var \Tygh\Addons\Synchro\Importers\WarehouseImporter */
     private $warehouse_importer;
 
@@ -32,21 +37,24 @@ class ProductImporter
     /**
      * Initializes the product importer.
      *
-     * @param \Tygh\Database\Connection                                 $database           Database connection
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository $mapping_repository Entity mapping repository
-     * @param \Tygh\Addons\Synchro\Importers\WarehouseImporter          $warehouse_importer Warehouse importer
-     * @param \Tygh\Addons\Synchro\Importers\ProductStockUpdater        $stock_updater      Stock updater
-     * @param \Tygh\Addons\Synchro\Importers\ImageImporter              $image_importer     Image importer
+     * @param \Tygh\Database\Connection                                       $database                   Database connection
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository       $mapping_repository         Entity mapping repository
+     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository $feature_mapping_repository Product feature mapping repository
+     * @param \Tygh\Addons\Synchro\Importers\WarehouseImporter                $warehouse_importer         Warehouse importer
+     * @param \Tygh\Addons\Synchro\Importers\ProductStockUpdater              $stock_updater              Stock updater
+     * @param \Tygh\Addons\Synchro\Importers\ImageImporter                    $image_importer             Image importer
      */
     public function __construct(
         Connection $database,
         ImportEntityMapRepository $mapping_repository,
+        ProductFeatureMappingRepository $feature_mapping_repository,
         WarehouseImporter $warehouse_importer,
         ProductStockUpdater $stock_updater,
         ImageImporter $image_importer
     ) {
         $this->database = $database;
         $this->mapping_repository = $mapping_repository;
+        $this->feature_mapping_repository = $feature_mapping_repository;
         $this->warehouse_importer = $warehouse_importer;
         $this->stock_updater = $stock_updater;
         $this->image_importer = $image_importer;
@@ -80,6 +88,36 @@ class ProductImporter
             $external_ids
         );
         $existing_product_ids = $this->findExistingProductIds($mappings);
+        $feature_mappings = [];
+        $variant_mappings = [];
+
+        if (!$actualize) {
+            $external_feature_ids = [];
+            $external_variant_ids = [];
+
+            foreach ($products as $product) {
+                foreach ($product->features as $feature) {
+                    $external_feature_ids[] = $feature->getEntityId();
+
+                    foreach ($feature->variants as $variant) {
+                        $external_variant_ids[] = $variant->getEntityId();
+                    }
+                }
+            }
+
+            if ($external_feature_ids) {
+                $feature_mappings = $this->feature_mapping_repository->findByExternalIds(
+                    $company_id,
+                    array_values(array_unique($external_feature_ids))
+                );
+                $variant_mappings = $this->mapping_repository->findByExternalIds(
+                    $company_id,
+                    ProductFeatureVariantDto::ENTITY_TYPE,
+                    array_values(array_unique($external_variant_ids))
+                );
+            }
+        }
+
         $current_images = $actualize
             ? []
             : $this->image_importer->findByObjectIds('product', array_keys($existing_product_ids));
@@ -107,7 +145,12 @@ class ProductImporter
             if ($actualize) {
                 fn_update_product_prices($product_id, ['price' => $product->price], $company_id);
             } else {
-                $product_id = $this->importProduct($product, $product_id, $company_id);
+                $product_id = $this->importProduct(
+                    $product,
+                    $product_id,
+                    $company_id,
+                    $this->resolveProductFeatureValues($product, $feature_mappings, $variant_mappings)
+                );
                 if (!$product_id) {
                     continue;
                 }
@@ -193,13 +236,14 @@ class ProductImporter
     /**
      * Creates or fully updates a product and stores its external mapping.
      *
-     * @param \Tygh\Addons\Synchro\Dto\ProductDto $product    Imported product
-     * @param int                                 $product_id Existing local product identifier
-     * @param int                                 $company_id Company identifier
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto $product                Imported product
+     * @param int                                 $product_id             Existing local product identifier
+     * @param int                                 $company_id             Company identifier
+     * @param array<int, int>                     $product_feature_values Product feature values
      *
      * @return int
      */
-    private function importProduct(ProductDto $product, $product_id, $company_id)
+    private function importProduct(ProductDto $product, $product_id, $company_id, array $product_feature_values)
     {
         $product_data = [
             'product'          => $product->name,
@@ -209,6 +253,10 @@ class ProductImporter
             'amount'           => $product->amount,
             'price'            => $product->price,
         ];
+
+        if ($product_feature_values) {
+            $product_data['product_features'] = $product_feature_values;
+        }
 
         if (!$product_id) {
             $product_data = [
@@ -235,6 +283,64 @@ class ProductImporter
         );
 
         return $product_id;
+    }
+
+    /**
+     * Resolves prepared local feature variants for a product.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto      $product          Imported product
+     * @param array<string, int>                       $feature_mappings External-to-local feature mappings
+     * @param array<string, array<string, int|string>> $variant_mappings External-to-local variant mappings
+     *
+     * @return array<int, int>
+     */
+    private function resolveProductFeatureValues(ProductDto $product, array $feature_mappings, array $variant_mappings)
+    {
+        $values = [];
+        $conflicted_features = [];
+
+        foreach ($product->features as $feature) {
+            $external_feature_id = $feature->getEntityId();
+
+            if (!array_key_exists($external_feature_id, $feature_mappings)) {
+                $this->logError(__('synchro.product_import_error.feature_mapping_not_found', [
+                    '[external_id]'         => $product->getEntityId(),
+                    '[feature_external_id]' => $external_feature_id,
+                ]));
+                continue;
+            }
+
+            $feature_id = $feature_mappings[$external_feature_id];
+
+            if (!$feature_id) {
+                continue;
+            }
+
+            foreach ($feature->variants as $variant) {
+                $external_variant_id = $variant->getEntityId();
+                $variant_id = isset($variant_mappings[$external_variant_id]['local_id'])
+                    ? (int) $variant_mappings[$external_variant_id]['local_id']
+                    : 0;
+
+                if (!$variant_id || isset($conflicted_features[$feature_id])) {
+                    continue;
+                }
+
+                if (isset($values[$feature_id]) && $values[$feature_id] !== $variant_id) {
+                    unset($values[$feature_id]);
+                    $conflicted_features[$feature_id] = true;
+                    $this->logError(__('synchro.product_import_error.feature_conflict', [
+                        '[external_id]' => $product->getEntityId(),
+                        '[feature_id]'  => $feature_id,
+                    ]));
+                    continue;
+                }
+
+                $values[$feature_id] = $variant_id;
+            }
+        }
+
+        return $values;
     }
 
     /**
