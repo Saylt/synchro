@@ -68,6 +68,28 @@ class ImportEntityMapRepository
     }
 
     /**
+     * Finds all mappings of an entity type.
+     *
+     * @param int    $company_id  Company identifier
+     * @param string $entity_type Entity type
+     *
+     * @return array<string, array<string, int|string>> Mappings indexed by external identifier
+     */
+    public function findAllByEntityType($company_id, $entity_type)
+    {
+        /** @var array<string, array<string, int|string>> $mappings */
+        $mappings = $this->database->getHash(
+            'SELECT * FROM ?:?p WHERE company_id = ?i AND entity_type = ?s',
+            'external_id',
+            self::TABLE_NAME,
+            $company_id,
+            $entity_type
+        );
+
+        return $mappings;
+    }
+
+    /**
      * Creates a mapping or updates its mutable data without changing update timestamps.
      * Company, entity type and external ID identify the mapping and therefore are not updated on conflict.
      *

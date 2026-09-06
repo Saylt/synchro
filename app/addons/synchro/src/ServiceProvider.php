@@ -14,6 +14,8 @@ use Tygh\Addons\Synchro\Convertors\ProductFeatureConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductFeatureVariantConvertor;
 use Tygh\Addons\Synchro\Convertors\WarehouseConvertor;
 use Tygh\Addons\Synchro\HookHandlers\LoggingHookHandler;
+use Tygh\Addons\Synchro\Importers\CategoryImporter;
+use Tygh\Addons\Synchro\Importers\ImageImporter;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
@@ -79,6 +81,18 @@ class ServiceProvider implements ServiceProviderInterface
 
         $pimple['addons.synchro.repository.product_feature_mapping'] = static function (Container $app) {
             return new ProductFeatureMappingRepository($app['db']);
+        };
+
+        $pimple['addons.synchro.importers.image'] = static function (Container $app) {
+            return new ImageImporter($app['db']);
+        };
+
+        $pimple['addons.synchro.importers.category'] = static function (Container $app) {
+            return new CategoryImporter(
+                $app['db'],
+                $app['addons.synchro.repository.import_entity_map'],
+                $app['addons.synchro.importers.image']
+            );
         };
 
         $pimple['addons.synchro.imported_product_feature_reader'] = static function (Container $app) {

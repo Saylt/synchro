@@ -423,3 +423,51 @@ msgstr "Warehouse [warehouse] could not be resolved for product with external ID
 msgctxt "Languages::synchro.product_import_error.update_failed"
 msgid "Product with external ID [external_id] could not be updated."
 msgstr "Product with external ID [external_id] could not be updated."
+
+msgctxt "Languages::synchro.product_import_error.image_sync_failed"
+msgid "Images for product with external ID [external_id] could not be fully synchronized: [error]"
+msgstr "Images for product with external ID [external_id] could not be fully synchronized: [error]"
+
+msgctxt "Languages::synchro.image_import_error.metadata_update_failed"
+msgid "Image pair [pair_id] metadata could not be updated for [url]."
+msgstr "Image pair [pair_id] metadata could not be updated for [url]."
+
+msgctxt "Languages::synchro.image_import_error.download_failed"
+msgid "Image could not be downloaded from [url]."
+msgstr "Image could not be downloaded from [url]."
+
+msgctxt "Languages::synchro.image_import_error.update_failed"
+msgid "Images could not be updated for [object_type] [object_id]."
+msgstr "Images could not be updated for [object_type] [object_id]."
+
+msgctxt "Languages::synchro.image_import_error.delete_failed"
+msgid "Image pair [pair_id] could not be deleted from [object_type] [object_id]."
+msgstr "Image pair [pair_id] could not be deleted from [object_type] [object_id]."
+
+msgctxt "Languages::synchro.category_import_error.duplicate"
+msgid "The category snapshot contains duplicate external ID [external_id]."
+msgstr "The category snapshot contains duplicate external ID [external_id]."
+
+msgctxt "Languages::synchro.category_import_error.parent_not_found"
+msgid "Parent category [parent_external_id] was not found for category [external_id]."
+msgstr "Parent category [parent_external_id] was not found for category [external_id]."
+
+msgctxt "Languages::synchro.category_import_error.parent_not_imported"
+msgid "Parent category [parent_external_id] was not imported for category [external_id]."
+msgstr "Parent category [parent_external_id] was not imported for category [external_id]."
+
+msgctxt "Languages::synchro.category_import_error.cycle"
+msgid "The category hierarchy contains a cycle involving category [external_id]."
+msgstr "The category hierarchy contains a cycle involving category [external_id]."
+
+msgctxt "Languages::synchro.category_import_error.update_failed"
+msgid "Category with external ID [external_id] could not be updated."
+msgstr "Category with external ID [external_id] could not be updated."
+
+msgctxt "Languages::synchro.category_import_error.disable_failed"
+msgid "Category with external ID [external_id] could not be disabled."
+msgstr "Category with external ID [external_id] could not be disabled."
+
+msgctxt "Languages::synchro.category_import_error.image_sync_failed"
+msgid "The image for category with external ID [external_id] could not be synchronized: [error]"
+msgstr "The image for category with external ID [external_id] could not be synchronized: [error]"
