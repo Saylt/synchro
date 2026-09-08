@@ -2,7 +2,9 @@
 
 namespace Tygh\Addons\Synchro\Repository;
 
+use UnexpectedValueException;
 use Throwable;
+use Tygh\Addons\Synchro\Dto\RepresentEntityDto;
 use Tygh\Database\Connection;
 
 /**
@@ -961,6 +963,73 @@ class ImportEntityRepository
         }
 
         return array_values($entities);
+    }
+
+    /**
+     * Finds a bounded entity batch from several import runs.
+     *
+     * @param array<int> $import_ids      Import identifiers
+     * @param string     $entity_type     Entity type
+     * @param string     $after_entity_id Last processed entity identifier
+     * @param int        $limit           Batch size
+     *
+     * @return array<array-key, \Tygh\Addons\Synchro\Dto\RepresentEntityDto>
+     */
+    public function findEntityBatch(array $import_ids, $entity_type, $after_entity_id, $limit)
+    {
+        if (!$import_ids || $limit < 1) {
+            return [];
+        }
+
+        $serialized_entities = $this->database->getColumn(
+            'SELECT entities.entity FROM ?:?p AS entities'
+            . ' INNER JOIN ('
+            . ' SELECT entity_id, MAX(import_id) AS import_id FROM ?:?p'
+            . ' WHERE import_id IN (?n) AND entity_type = ?s AND entity_id > ?s GROUP BY entity_id'
+            . ' ) AS latest ON latest.import_id = entities.import_id AND latest.entity_id = entities.entity_id'
+            . ' WHERE entities.entity_type = ?s ORDER BY entities.entity_id LIMIT ?i',
+            self::TABLE_NAME,
+            self::TABLE_NAME,
+            $import_ids,
+            $entity_type,
+            $after_entity_id,
+            $entity_type,
+            $limit
+        );
+        $entities = [];
+
+        foreach ($serialized_entities as $serialized_entity) {
+            /** @var \Tygh\Addons\Synchro\Dto\RepresentEntityDto $entity */
+            $entity = unserialize($serialized_entity);
+            if (!$entity instanceof RepresentEntityDto || $entity->getEntityType() !== $entity_type) {
+                throw new UnexpectedValueException('The stored entity type does not match the requested type');
+            }
+            $entities[] = $entity;
+        }
+
+        return $entities;
+    }
+
+    /**
+     * Removes all staged entities of the specified import runs.
+     *
+     * @param array<int> $import_ids Import identifiers
+     *
+     * @return int
+     */
+    public function removeByImportIds(array $import_ids)
+    {
+        if (!$import_ids) {
+            return 0;
+        }
+
+        $result = $this->database->query(
+            'DELETE FROM ?:?p WHERE import_id IN (?n)',
+            self::TABLE_NAME,
+            $import_ids
+        );
+
+        return is_int($result) ? $result : 0;
     }
 
     /**

@@ -277,7 +277,18 @@ class ImportProcessManager
             }
 
             $this->repository->updateImportStatus($parent_import_id, $result_status);
-            $this->cron_manager->finalizeDeferredTask((int) $parent['cron_script_id'], $result_status);
+            $is_task_finalized = $this->cron_manager->finalizeDeferredTask(
+                (int) $parent['cron_script_id'],
+                $result_status
+            );
+            if ($is_task_finalized) {
+                $this->cron_manager->queuePostProcess(
+                    (int) $parent['cron_script_id'],
+                    $parent_import_id,
+                    isset($parent['source_type']) ? (string) $parent['source_type'] : ImportEntityRepository::SOURCE_TYPE_FULL,
+                    $result_status
+                );
+            }
 
             return $result_status;
         } finally {

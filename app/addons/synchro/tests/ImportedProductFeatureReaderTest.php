@@ -42,6 +42,48 @@ class ImportedProductFeatureReaderTest extends ATestCase
         $this->assertSame(['7#100', '7#200'], array_keys($features[0]->variants));
     }
 
+    public function testReadsFeaturesFromSpecifiedParentImport()
+    {
+        $repository = $this->getMockBuilder(ImportEntityRepository::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['findCompletedChildIds', 'findAllByEntityTypeFromImports'])
+            ->getMock();
+        $repository->expects($this->once())
+            ->method('findCompletedChildIds')
+            ->with(20)
+            ->willReturn([21, 22]);
+        $repository->expects($this->once())
+            ->method('findAllByEntityTypeFromImports')
+            ->with([21, 22], ProductFeatureDto::ENTITY_TYPE, false)
+            ->willReturn([$this->createFeature(7, 'Power', '100')]);
+
+        $features = (new ImportedProductFeatureReader($repository))->readByParentImportId(20);
+
+        $this->assertCount(1, $features);
+        $this->assertSame('7', $features[0]->getEntityId());
+    }
+
+    public function testReadsFeaturesFromParentWhenItHasNoChildImports()
+    {
+        $repository = $this->getMockBuilder(ImportEntityRepository::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['findCompletedChildIds', 'findAllByEntityTypeFromImports'])
+            ->getMock();
+        $repository->expects($this->once())
+            ->method('findCompletedChildIds')
+            ->with(20)
+            ->willReturn([]);
+        $repository->expects($this->once())
+            ->method('findAllByEntityTypeFromImports')
+            ->with([20], ProductFeatureDto::ENTITY_TYPE, false)
+            ->willReturn([$this->createFeature(7, 'Power', '100')]);
+
+        $features = (new ImportedProductFeatureReader($repository))->readByParentImportId(20);
+
+        $this->assertCount(1, $features);
+        $this->assertSame('7', $features[0]->getEntityId());
+    }
+
     /**
      * @param int    $id    Feature identifier
      * @param string $name  Feature name

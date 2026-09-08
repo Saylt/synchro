@@ -21,4 +21,16 @@ return [
     'synchro_import.warehouses' => [
         'name' => 'synchro.import_warehouses',
     ],
+    'synchro_import.apply_products' => [
+        'name'   => 'synchro.apply_products',
+        'hidden' => true,
+    ],
+    'synchro_import.apply_test_products' => [
+        'name'   => 'synchro.apply_test_products',
+        'hidden' => true,
+    ],
+    'synchro_import.actualize_products' => [
+        'name'   => 'synchro.actualize_products',
+        'hidden' => true,
+    ],
 ];

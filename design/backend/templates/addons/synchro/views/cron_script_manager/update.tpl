@@ -22,7 +22,9 @@
                 >
                     <option value="">--</option>
                     {foreach $synchro_cron_manager->getAvailableScripts() as $dispatch => $task}
-                        <option value="{$dispatch}"{if $script_data.script === $dispatch} selected="selected"{/if}>{__($task.name)}</option>
+                        {if empty($task.hidden) || $script_data.script === $dispatch}
+                            <option value="{$dispatch}"{if $script_data.script === $dispatch} selected="selected"{/if}>{__($task.name)}</option>
+                        {/if}
                     {/foreach}
                 </select>
             </div>
@@ -199,6 +201,28 @@
                         value="{$script_data.test_page|default:1}"
                         class="input-small"
                     >
+                </div>
+            </div>
+
+            <div class="control-group">
+                <label for="synchro_post_process" class="control-label">{__("synchro.after_finish")}</label>
+                <div class="controls">
+                    <select
+                        id="synchro_post_process"
+                        name="script_data[post_process]"
+                        class="input-large"
+                    >
+                        <option value="">{__("none")}</option>
+                        <option
+                            value="synchro_import.apply_products"
+                            {if $script_data.post_process === "synchro_import.apply_products"}selected="selected"{/if}
+                        >{__("synchro.apply_products")}</option>
+                        <option
+                            value="synchro_import.actualize_products"
+                            {if $script_data.post_process === "synchro_import.actualize_products"}selected="selected"{/if}
+                        >{__("synchro.actualize_products")}</option>
+                    </select>
+                    <p class="muted description">{__("synchro.after_finish_description")}</p>
                 </div>
             </div>
         </fieldset>

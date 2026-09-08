@@ -3,6 +3,8 @@
 namespace Tygh\Addons\Synchro\Tests\Unit;
 
 defined('DESCR_SL') or define('DESCR_SL', 'en');
+defined('SECONDS_IN_DAY') or define('SECONDS_IN_DAY', 86400);
+defined('TIME') or define('TIME', time());
 
 use Tygh\Addons\Synchro\CronManager;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
@@ -176,11 +178,15 @@ class ImportProcessManagerTest extends ATestCase
         ];
         $cron_manager = $this->getMockBuilder(CronManager::class)
             ->disableOriginalConstructor()
-            ->setMethods(['finalizeDeferredTask'])
+            ->setMethods(['finalizeDeferredTask', 'queuePostProcess'])
             ->getMock();
         $cron_manager->expects($this->once())
             ->method('finalizeDeferredTask')
             ->with(15, ImportEntityRepository::STATUS_PARTIAL_SUCCESS)
+            ->willReturn(true);
+        $cron_manager->expects($this->once())
+            ->method('queuePostProcess')
+            ->with(15, 10, ImportEntityRepository::SOURCE_TYPE_FULL, ImportEntityRepository::STATUS_PARTIAL_SUCCESS)
             ->willReturn(true);
         $manager = $this->createManager($repository, null, $cron_manager);
 
@@ -275,11 +281,15 @@ class ImportProcessManagerTest extends ATestCase
         ];
         $cron_manager = $this->getMockBuilder(CronManager::class)
             ->disableOriginalConstructor()
-            ->setMethods(['finalizeDeferredTask'])
+            ->setMethods(['finalizeDeferredTask', 'queuePostProcess'])
             ->getMock();
         $cron_manager->expects($this->once())
             ->method('finalizeDeferredTask')
             ->with(15, ImportEntityRepository::STATUS_PARTIAL_SUCCESS)
+            ->willReturn(true);
+        $cron_manager->expects($this->once())
+            ->method('queuePostProcess')
+            ->with(15, 10, ImportEntityRepository::SOURCE_TYPE_FULL, ImportEntityRepository::STATUS_PARTIAL_SUCCESS)
             ->willReturn(true);
         $manager = $this->createManager($repository, null, $cron_manager);
 
@@ -392,11 +402,15 @@ class ImportProcessManagerTest extends ATestCase
         $repository->stale_import_ids = [11];
         $cron_manager = $this->getMockBuilder(CronManager::class)
             ->disableOriginalConstructor()
-            ->setMethods(['finalizeDeferredTask'])
+            ->setMethods(['finalizeDeferredTask', 'queuePostProcess'])
             ->getMock();
         $cron_manager->expects($this->once())
             ->method('finalizeDeferredTask')
             ->with(15, ImportEntityRepository::STATUS_PARTIAL_SUCCESS)
+            ->willReturn(true);
+        $cron_manager->expects($this->once())
+            ->method('queuePostProcess')
+            ->with(15, 10, ImportEntityRepository::SOURCE_TYPE_FULL, ImportEntityRepository::STATUS_PARTIAL_SUCCESS)
             ->willReturn(true);
         $manager = $this->createManager($repository, null, $cron_manager);
 

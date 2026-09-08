@@ -52,6 +52,9 @@ class ImportedProductFeatureReader
     public function readByParentImportId($parent_import_id)
     {
         $child_import_ids = $this->repository->findCompletedChildIds($parent_import_id);
+        if (!$child_import_ids) {
+            $child_import_ids = [$parent_import_id];
+        }
         $portion_features = $this->repository->findAllByEntityTypeFromImports(
             $child_import_ids,
             ProductFeatureDto::ENTITY_TYPE,

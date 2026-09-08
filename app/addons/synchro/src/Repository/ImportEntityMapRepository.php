@@ -195,6 +195,80 @@ class ImportEntityMapRepository
     }
 
     /**
+     * Marks a batch of entities as fully updated and not awaiting archiving.
+     *
+     * @param int           $company_id   Company identifier
+     * @param string        $entity_type  Entity type
+     * @param array<string> $external_ids External entity identifiers
+     * @param int|null      $timestamp    Update timestamp
+     *
+     * @return bool
+     */
+    public function markFullyUpdatedMany($company_id, $entity_type, array $external_ids, $timestamp = null)
+    {
+        return $this->updateTimestampMany(
+            $company_id,
+            $entity_type,
+            $external_ids,
+            'full_updated_timestamp',
+            $timestamp
+        );
+    }
+
+    /**
+     * Marks a batch of entities as actualized and not awaiting archiving.
+     *
+     * @param int           $company_id   Company identifier
+     * @param string        $entity_type  Entity type
+     * @param array<string> $external_ids External entity identifiers
+     * @param int|null      $timestamp    Update timestamp
+     *
+     * @return bool
+     */
+    public function markActualizedMany($company_id, $entity_type, array $external_ids, $timestamp = null)
+    {
+        return $this->updateTimestampMany(
+            $company_id,
+            $entity_type,
+            $external_ids,
+            'actualized_timestamp',
+            $timestamp
+        );
+    }
+
+    /**
+     * Marks mapped entities absent from a completed full import for later archiving.
+     *
+     * @param int        $company_id  Company identifier
+     * @param string     $entity_type Entity type
+     * @param array<int> $import_ids  Import identifiers containing the full source snapshot
+     *
+     * @return bool
+     */
+    public function markMissingForArchiving($company_id, $entity_type, array $import_ids)
+    {
+        if (!$import_ids) {
+            return false;
+        }
+
+        return $this->database->query(
+            'UPDATE ?:?p AS mappings SET mappings.needs_archiving = IF(EXISTS ('
+            . 'SELECT 1 FROM ?:?p AS entities WHERE entities.import_id IN (?n)'
+            . ' AND entities.entity_type = ?s AND entities.entity_id = mappings.external_id'
+            . '), ?s, ?s)'
+            . ' WHERE mappings.company_id = ?i AND mappings.entity_type = ?s',
+            self::TABLE_NAME,
+            ImportEntityRepository::TABLE_NAME,
+            $import_ids,
+            $entity_type,
+            'N',
+            'Y',
+            $company_id,
+            $entity_type
+        ) !== false;
+    }
+
+    /**
      * Removes an entity mapping by its external identifier.
      *
      * @param int    $company_id  Company identifier
@@ -236,5 +310,40 @@ class ImportEntityMapRepository
             $entity_type,
             $external_id
         );
+    }
+
+    /**
+     * Updates one timestamp for a batch of mappings.
+     *
+     * @param int           $company_id   Company identifier
+     * @param string        $entity_type  Entity type
+     * @param array<string> $external_ids External entity identifiers
+     * @param string        $field        Timestamp field
+     * @param int|null      $timestamp    Timestamp value
+     *
+     * @return bool
+     */
+    private function updateTimestampMany(
+        $company_id,
+        $entity_type,
+        array $external_ids,
+        $field,
+        $timestamp
+    ) {
+        if (!$external_ids) {
+            return true;
+        }
+
+        return $this->database->query(
+            'UPDATE ?:?p SET ?f = ?i, needs_archiving = ?s'
+            . ' WHERE company_id = ?i AND entity_type = ?s AND external_id IN (?a)',
+            self::TABLE_NAME,
+            $field,
+            $timestamp === null ? TIME : $timestamp,
+            'N',
+            $company_id,
+            $entity_type,
+            $external_ids
+        ) !== false;
     }
 }

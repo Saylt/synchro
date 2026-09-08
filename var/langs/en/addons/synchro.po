@@ -535,3 +535,59 @@ msgstr "Category with external ID [external_id] could not be disabled."
 msgctxt "Languages::synchro.category_import_error.image_sync_failed"
 msgid "The image for category with external ID [external_id] could not be synchronized: [error]"
 msgstr "The image for category with external ID [external_id] could not be synchronized: [error]"
+
+msgctxt "Languages::synchro.apply_products"
+msgid "Import products into the catalog"
+msgstr "Import products into the catalog"
+
+msgctxt "Languages::synchro.apply_test_products"
+msgid "Import test products into the catalog"
+msgstr "Import test products into the catalog"
+
+msgctxt "Languages::synchro.actualize_products"
+msgid "Update product prices and stock"
+msgstr "Update product prices and stock"
+
+msgctxt "Languages::synchro.after_finish"
+msgid "After import"
+msgstr "After import"
+
+msgctxt "Languages::synchro.after_finish_description"
+msgid "Queues the selected processing task as soon as the API import finishes. Test imports automatically use the test processing mode."
+msgstr "Queues the selected processing task as soon as the API import finishes. Test imports automatically use the test processing mode."
+
+msgctxt "Languages::synchro.applied_products"
+msgid "Applied products: [count]"
+msgstr "Applied products: [count]"
+
+msgctxt "Languages::synchro.post_process_not_queued"
+msgid "Post-process [dispatch] could not be queued for import [import_id]: [reason]."
+msgstr "Post-process [dispatch] could not be queued for import [import_id]: [reason]."
+
+msgctxt "Languages::synchro.post_process_error.source_task_not_found"
+msgid "Source cron task [script_id] was not found"
+msgstr "Source cron task [script_id] was not found"
+
+msgctxt "Languages::synchro.post_process_error.unsupported_source_status"
+msgid "Source import finished with unsupported status [status]"
+msgstr "Source import finished with unsupported status [status]"
+
+msgctxt "Languages::synchro.post_process_error.full_application_requires_completed"
+msgid "Full product application requires a completed source import, received [status]"
+msgstr "Full product application requires a completed source import, received [status]"
+
+msgctxt "Languages::synchro.post_process_error.dispatch_not_allowed"
+msgid "Target dispatch is not registered for Synchro"
+msgstr "Target dispatch is not registered for Synchro"
+
+msgctxt "Languages::synchro.post_process_error.task_not_available"
+msgid "Target task [script_id] cannot be queued from state [inner_status]"
+msgstr "Target task [script_id] cannot be queued from state [inner_status]"
+
+msgctxt "Languages::synchro.post_process_error.task_creation_failed"
+msgid "Target cron task could not be created"
+msgstr "Target cron task could not be created"
+
+msgctxt "Languages::synchro.post_process_error.task_start_failed"
+msgid "Target task [script_id] could not be started (exit code [exit_code]): [output]"
+msgstr "Target task [script_id] could not be started (exit code [exit_code]): [output]"

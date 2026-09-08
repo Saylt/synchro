@@ -67,14 +67,20 @@ class ProductImporter
      * @param int                                        $company_id Company identifier
      * @param bool                                       $actualize  Whether only price and stock must be updated
      *
-     * @return array<string, int> Local product identifiers indexed by external identifiers
+     * @return array{
+     *     product_ids: array<string, int>,
+     *     fully_updated_external_ids: array<string>
+     * }
      *
      * @throws \Throwable When product stock data cannot be saved.
      */
     public function import(array $products, $company_id, $actualize = false)
     {
         if (!$products) {
-            return [];
+            return [
+                'product_ids'                 => [],
+                'fully_updated_external_ids' => [],
+            ];
         }
 
         $external_ids = [];
@@ -122,6 +128,7 @@ class ProductImporter
             ? []
             : $this->image_importer->findByObjectIds('product', array_keys($existing_product_ids));
         $imported_product_ids = [];
+        $fully_updated_external_ids = [];
         $product_stocks = [];
 
         foreach ($products as $product) {
@@ -155,12 +162,16 @@ class ProductImporter
                     continue;
                 }
 
-                $this->syncImages(
-                    $product,
-                    $product_id,
-                    $mapping,
-                    isset($current_images[$product_id]) ? $current_images[$product_id] : []
-                );
+                if (
+                    $this->syncImages(
+                        $product,
+                        $product_id,
+                        $mapping,
+                        isset($current_images[$product_id]) ? $current_images[$product_id] : []
+                    )
+                ) {
+                    $fully_updated_external_ids[$external_id] = $external_id;
+                }
             }
 
             $imported_product_ids[$external_id] = $product_id;
@@ -174,7 +185,10 @@ class ProductImporter
             $this->stock_updater->update($product_stocks);
         }
 
-        return $imported_product_ids;
+        return [
+            'product_ids'                 => $imported_product_ids,
+            'fully_updated_external_ids' => array_values($fully_updated_external_ids),
+        ];
     }
 
     /**
@@ -351,7 +365,7 @@ class ProductImporter
      * @param array<string, int|string>                                                           $mapping        Product mapping
      * @param array<string, array{pair_id: int, type: string, position: int, image_path: string}> $current_images Current product images
      *
-     * @return void
+     * @return bool
      */
     private function syncImages(ProductDto $product, $product_id, array $mapping, array $current_images)
     {
@@ -369,6 +383,8 @@ class ProductImporter
         );
 
         $this->logImageErrors($result, $product->getEntityId());
+
+        return $result->isSuccess();
     }
 
     /**

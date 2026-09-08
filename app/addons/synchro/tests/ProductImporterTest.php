@@ -13,26 +13,35 @@ namespace Tygh\Addons\Synchro\Importers {
         return ProductImporterTest::updateProductPrices($product_id, $product_data, $company_id);
     }
 
-    function fn_log_event($type, $action, array $data)
-    {
-        ProductImporterTest::logEvent($type, $action, $data);
+    if (!function_exists(__NAMESPACE__ . '\\fn_log_event')) {
+        function fn_log_event($type, $action, array $data)
+        {
+            call_user_func($GLOBALS['synchro_importer_log_event'], $type, $action, $data);
+        }
     }
 
-    function __($name, array $params = [])
-    {
-        return $name . json_encode($params);
+    if (!function_exists(__NAMESPACE__ . '\\__')) {
+        function __($name, array $params = [])
+        {
+            return $name . json_encode($params);
+        }
     }
 }
 
 namespace Tygh\Addons\Synchro\Tests\Unit {
 
 use Tygh\Addons\Synchro\Dto\ProductDto;
+use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
+use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Dto\WarehouseDto;
 use Tygh\Addons\Synchro\Enum\Logging;
+use Tygh\Addons\Synchro\Importers\ImageImporter;
 use Tygh\Addons\Synchro\Importers\ProductImporter;
 use Tygh\Addons\Synchro\Importers\ProductStockUpdater;
 use Tygh\Addons\Synchro\Importers\WarehouseImporter;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
+use Tygh\Common\OperationResult;
 use Tygh\Database\Connection;
 use Tygh\Tests\Unit\ATestCase;
 
@@ -57,6 +66,9 @@ class ProductImporterTest extends ATestCase
         self::$log_event = static function () {
             throw new \RuntimeException('Logger must not be called');
         };
+        $GLOBALS['synchro_importer_log_event'] = static function ($type, $action, array $data) {
+            ProductImporterTest::logEvent($type, $action, $data);
+        };
     }
 
     public function testCreatesBaseProductAndStoresMapping()
@@ -71,9 +83,6 @@ class ProductImporterTest extends ATestCase
         $mapping_repository->expects($this->once())
             ->method('save')
             ->with(1, ProductDto::ENTITY_TYPE, '77', 100, 'Imported product');
-        $mapping_repository->expects($this->never())
-            ->method('markFullyUpdated')
-            ->with(1, ProductDto::ENTITY_TYPE, '77');
         $warehouse_importer = $this->createWarehouseImporter();
         $warehouse_importer->expects($this->once())
             ->method('import')
@@ -85,6 +94,21 @@ class ProductImporterTest extends ATestCase
             ->with([
                 100 => ['amount' => 4, 'warehouses' => [12 => 3]],
             ]);
+        $image_importer = $this->createImageImporter();
+        $image_importer->expects($this->once())
+            ->method('findByObjectIds')
+            ->with('product', [])
+            ->willReturn([]);
+        $image_importer->expects($this->once())
+            ->method('import')
+            ->with(
+                100,
+                'product',
+                ['https://example.com/main.jpg', 'https://example.com/additional.jpg'],
+                0,
+                []
+            )
+            ->willReturn(new OperationResult(true));
         $updated_data = [];
         $updated_product_id = null;
         self::$update_product = static function (array $product_data, $product_id) use (
@@ -100,11 +124,16 @@ class ProductImporterTest extends ATestCase
         $product_ids = (new ProductImporter(
             $database,
             $mapping_repository,
+            $this->createFeatureMappingRepository(),
             $warehouse_importer,
-            $stock_updater
+            $stock_updater,
+            $image_importer
         ))->import([$product], 1);
 
-        $this->assertSame(['77' => 100], $product_ids);
+        $this->assertSame([
+            'product_ids'                 => ['77' => 100],
+            'fully_updated_external_ids' => ['77'],
+        ], $product_ids);
         $this->assertSame(0, $updated_product_id);
         $this->assertSame([
             'company_id'       => 1,
@@ -121,6 +150,7 @@ class ProductImporterTest extends ATestCase
     public function testActualizesOnlyPriceAndAmountOfMappedProduct()
     {
         $product = $this->createProduct();
+        $this->addFeature($product, 10, 'Red');
         $database = $this->createDatabase();
         $database->expects($this->once())
             ->method('getColumn')
@@ -155,19 +185,111 @@ class ProductImporterTest extends ATestCase
             ->with([
                 57 => ['amount' => 4, 'warehouses' => [12 => 3]],
             ]);
+        $image_importer = $this->createImageImporter();
+        $image_importer->expects($this->never())->method('findByObjectIds');
+        $image_importer->expects($this->never())->method('import');
+        $feature_mapping_repository = $this->createFeatureMappingRepository();
+        $feature_mapping_repository->expects($this->never())->method('findByExternalIds');
 
         $product_ids = (new ProductImporter(
             $database,
             $mapping_repository,
+            $feature_mapping_repository,
             $warehouse_importer,
-            $stock_updater
+            $stock_updater,
+            $image_importer
         ))->import(
             [$product],
             1,
             true
         );
 
-        $this->assertSame(['77' => 57], $product_ids);
+        $this->assertSame([
+            'product_ids'                 => ['77' => 57],
+            'fully_updated_external_ids' => [],
+        ], $product_ids);
+    }
+
+    public function testAssignsOneLocalVariantFromMergedExternalFeatures()
+    {
+        $product = $this->createProduct();
+        $color_variant_id = $this->addFeature($product, 10, 'Red');
+        $shirt_color_variant_id = $this->addFeature($product, 11, 'red');
+        $updated_data = [];
+        $logged_errors = [];
+
+        $product_ids = $this->importFullProduct(
+            $product,
+            ['10', '11'],
+            ['10' => 57, '11' => 57],
+            [
+                $color_variant_id       => ['local_id' => 901],
+                $shirt_color_variant_id => ['local_id' => 901],
+            ],
+            $updated_data,
+            $logged_errors
+        );
+
+        $this->assertSame(['77' => 100], $product_ids['product_ids']);
+        $this->assertSame(['77'], $product_ids['fully_updated_external_ids']);
+        $this->assertSame([57 => 901], $updated_data['product_features']);
+        $this->assertSame([], $logged_errors);
+    }
+
+    public function testSkipsConflictingMergedFeatureValues()
+    {
+        $product = $this->createProduct();
+        $color_variant_id = $this->addFeature($product, 10, 'Red');
+        $shirt_color_variant_id = $this->addFeature($product, 11, 'Blue');
+        $updated_data = [];
+        $logged_errors = [];
+
+        $product_ids = $this->importFullProduct(
+            $product,
+            ['10', '11'],
+            ['10' => 57, '11' => 57],
+            [
+                $color_variant_id       => ['local_id' => 901],
+                $shirt_color_variant_id => ['local_id' => 902],
+            ],
+            $updated_data,
+            $logged_errors
+        );
+
+        $this->assertSame(['77' => 100], $product_ids['product_ids']);
+        $this->assertSame(['77'], $product_ids['fully_updated_external_ids']);
+        $this->assertArrayNotHasKey('product_features', $updated_data);
+        $this->assertCount(1, $logged_errors);
+        $this->assertStringContainsString('77', $logged_errors[0]);
+        $this->assertStringContainsString('57', $logged_errors[0]);
+    }
+
+    public function testLogsUnresolvedAndSilentlySkipsExplicitlySkippedFeatures()
+    {
+        $product = $this->createProduct();
+        $skipped_variant_id = $this->addFeature($product, 10, 'Red');
+        $unresolved_variant_id = $this->addFeature($product, 11, 'Blue');
+        $updated_data = [];
+        $logged_errors = [];
+
+        $product_ids = $this->importFullProduct(
+            $product,
+            ['10', '11'],
+            ['10' => 0],
+            [
+                $skipped_variant_id    => ['local_id' => 901],
+                $unresolved_variant_id => ['local_id' => 902],
+            ],
+            $updated_data,
+            $logged_errors
+        );
+
+        $this->assertSame(['77' => 100], $product_ids['product_ids']);
+        $this->assertSame(['77'], $product_ids['fully_updated_external_ids']);
+        $this->assertArrayNotHasKey('product_features', $updated_data);
+        $this->assertCount(1, $logged_errors);
+        $this->assertStringContainsString('77', $logged_errors[0]);
+        $this->assertStringContainsString('11', $logged_errors[0]);
     }
 
     public function testDoesNotCreateProductDuringActualization()
@@ -189,15 +311,23 @@ class ProductImporterTest extends ATestCase
         };
         $stock_updater = $this->createProductStockUpdater();
         $stock_updater->expects($this->never())->method('update');
+        $image_importer = $this->createImageImporter();
+        $image_importer->expects($this->never())->method('findByObjectIds');
+        $image_importer->expects($this->never())->method('import');
 
         $product_ids = (new ProductImporter(
             $this->createDatabase(),
             $mapping_repository,
+            $this->createFeatureMappingRepository(),
             $warehouse_importer,
-            $stock_updater
+            $stock_updater,
+            $image_importer
         ))->import([$product], 1, true);
 
-        $this->assertSame([], $product_ids);
+        $this->assertSame([
+            'product_ids'                 => [],
+            'fully_updated_external_ids' => [],
+        ], $product_ids);
         $this->assertSame(Logging::LOG_TYPE_CRON_MANAGER, $logged_event[0]);
         $this->assertSame(Logging::ACTION_ERRORS, $logged_event[1]);
         $this->assertSame('synchro_import.products', $logged_event[2]['script']);
@@ -225,18 +355,74 @@ class ProductImporterTest extends ATestCase
         };
         $stock_updater = $this->createProductStockUpdater();
         $stock_updater->expects($this->never())->method('update');
+        $image_importer = $this->createImageImporter();
+        $image_importer->expects($this->once())
+            ->method('findByObjectIds')
+            ->with('product', [])
+            ->willReturn([]);
+        $image_importer->expects($this->never())->method('import');
 
         $product_ids = (new ProductImporter(
             $this->createDatabase(),
             $mapping_repository,
+            $this->createFeatureMappingRepository(),
             $warehouse_importer,
-            $stock_updater
+            $stock_updater,
+            $image_importer
         ))->import([$product], 1);
 
-        $this->assertSame([], $product_ids);
+        $this->assertSame([
+            'product_ids'                 => [],
+            'fully_updated_external_ids' => [],
+        ], $product_ids);
         $this->assertSame(Logging::LOG_TYPE_CRON_MANAGER, $logged_event[0]);
         $this->assertSame(Logging::ACTION_ERRORS, $logged_event[1]);
         $this->assertStringContainsString('etm3', $logged_event[2]['error']);
+    }
+
+    public function testLogsProductImageFailureReason()
+    {
+        $product = $this->createProduct();
+        $mapping_repository = $this->createMappingRepository();
+        $mapping_repository->expects($this->once())
+            ->method('findByExternalIds')
+            ->willReturn([]);
+        $mapping_repository->expects($this->once())->method('save');
+        $warehouse_importer = $this->createWarehouseImporter();
+        $warehouse_importer->expects($this->once())->method('import')->willReturn(12);
+        $stock_updater = $this->createProductStockUpdater();
+        $stock_updater->expects($this->once())->method('update')->with([
+            100 => ['amount' => 4, 'warehouses' => [12 => 3]],
+        ]);
+        $image_result = new OperationResult(false);
+        $image_result->addError('download.main.jpg', 'Image download failed');
+        $image_importer = $this->createImageImporter();
+        $image_importer->expects($this->once())->method('findByObjectIds')->willReturn([]);
+        $image_importer->expects($this->once())->method('import')->willReturn($image_result);
+        self::$update_product = static function () {
+            return 100;
+        };
+        $logged_error = '';
+        self::$log_event = static function ($type, $action, array $data) use (&$logged_error) {
+            $logged_error = $data['error'];
+        };
+
+        $this->assertSame(
+            [
+                'product_ids'                 => ['77' => 100],
+                'fully_updated_external_ids' => [],
+            ],
+            (new ProductImporter(
+                $this->createDatabase(),
+                $mapping_repository,
+                $this->createFeatureMappingRepository(),
+                $warehouse_importer,
+                $stock_updater,
+                $image_importer
+            ))->import([$product], 1)
+        );
+        $this->assertStringContainsString('77', $logged_error);
+        $this->assertStringContainsString('Image download failed', $logged_error);
     }
 
     /**
@@ -252,12 +438,100 @@ class ProductImporterTest extends ATestCase
         $product->seo_name = 'imported-product';
         $product->amount = 4;
         $product->price = 250.5;
+        $product->images = [
+            ['url' => 'https://example.com/main.jpg', 'hash' => 'main'],
+            ['url' => 'https://example.com/additional.jpg', 'hash' => 'additional'],
+        ];
         $warehouse = new WarehouseDto();
         $warehouse->id = 'etm3';
         $warehouse->amount = 3;
         $product->warehouses[] = $warehouse;
 
         return $product;
+    }
+
+    /**
+     * Adds an imported feature with one selected variant to a product.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto $product    Imported product
+     * @param int                                   $feature_id External feature identifier
+     * @param string                                $value      Selected feature value
+     *
+     * @return string External variant identifier
+     */
+    private function addFeature(ProductDto $product, $feature_id, $value)
+    {
+        $feature = new ProductFeatureDto();
+        $feature->id = $feature_id;
+        $variant = new ProductFeatureVariantDto();
+        $variant->id = $feature_id . '#' . md5($value);
+        $variant->feature_id = $feature_id;
+        $variant->name = $value;
+        $variant->value = $value;
+        $feature->variants[$variant->getEntityId()] = $variant;
+        $product->features[] = $feature;
+
+        return $variant->getEntityId();
+    }
+
+    /**
+     * Imports a product with prepared feature mappings and captures updated data and errors.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto $product          Imported product
+     * @param array<string>                         $external_feature_ids External feature identifiers
+     * @param array<string, int>                    $feature_mappings     External-to-local feature mappings
+     * @param array<string, array{local_id: int}>   $variant_mappings     External-to-local variant mappings
+     * @param array                                 $updated_data         Captured product data
+     * @param array<string>                         $logged_errors        Captured errors
+     *
+     * @return array{product_ids: array<string, int>, fully_updated_external_ids: array<string>}
+     */
+    private function importFullProduct(
+        ProductDto $product,
+        array $external_feature_ids,
+        array $feature_mappings,
+        array $variant_mappings,
+        array &$updated_data,
+        array &$logged_errors
+    ) {
+        $mapping_repository = $this->createMappingRepository();
+        $mapping_repository->expects($this->exactly(2))
+            ->method('findByExternalIds')
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, [$product->getEntityId()]],
+                [1, ProductFeatureVariantDto::ENTITY_TYPE, array_keys($variant_mappings)]
+            )
+            ->willReturnOnConsecutiveCalls([], $variant_mappings);
+        $mapping_repository->expects($this->once())->method('save');
+        $feature_mapping_repository = $this->createFeatureMappingRepository();
+        $feature_mapping_repository->expects($this->once())
+            ->method('findByExternalIds')
+            ->with(1, $external_feature_ids)
+            ->willReturn($feature_mappings);
+        $warehouse_importer = $this->createWarehouseImporter();
+        $warehouse_importer->method('import')->willReturn(12);
+        $stock_updater = $this->createProductStockUpdater();
+        $stock_updater->expects($this->once())->method('update');
+        $image_importer = $this->createImageImporter();
+        $image_importer->method('findByObjectIds')->willReturn([]);
+        $image_importer->method('import')->willReturn(new OperationResult(true));
+        self::$update_product = static function (array $product_data) use (&$updated_data) {
+            $updated_data = $product_data;
+
+            return 100;
+        };
+        self::$log_event = static function ($type, $action, array $data) use (&$logged_errors) {
+            $logged_errors[] = $data['error'];
+        };
+
+        return (new ProductImporter(
+            $this->createDatabase(),
+            $mapping_repository,
+            $feature_mapping_repository,
+            $warehouse_importer,
+            $stock_updater,
+            $image_importer
+        ))->import([$product], 1);
     }
 
     /**
@@ -278,7 +552,18 @@ class ProductImporterTest extends ATestCase
     {
         return $this->getMockBuilder(ImportEntityMapRepository::class)
             ->disableOriginalConstructor()
-            ->setMethods(['findByExternalIds', 'save', 'markFullyUpdated', 'markActualized'])
+            ->setMethods(['findByExternalIds', 'save', 'markFullyUpdated', 'markFullyUpdatedMany', 'markActualized'])
+            ->getMock();
+    }
+
+    /**
+     * @return \PHPUnit\Framework\MockObject\MockObject|\Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository
+     */
+    private function createFeatureMappingRepository()
+    {
+        return $this->getMockBuilder(ProductFeatureMappingRepository::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['findByExternalIds'])
             ->getMock();
     }
 
@@ -301,6 +586,17 @@ class ProductImporterTest extends ATestCase
         return $this->getMockBuilder(ProductStockUpdater::class)
             ->disableOriginalConstructor()
             ->setMethods(['update'])
+            ->getMock();
+    }
+
+    /**
+     * @return \PHPUnit\Framework\MockObject\MockObject|\Tygh\Addons\Synchro\Importers\ImageImporter
+     */
+    private function createImageImporter()
+    {
+        return $this->getMockBuilder(ImageImporter::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['findByObjectIds', 'import'])
             ->getMock();
     }
 

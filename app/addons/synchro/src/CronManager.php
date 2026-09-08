@@ -25,6 +25,10 @@ class CronManager
 
     const LOCK_PREFIX = 'synchro.cron.';
 
+    const POST_PROCESS_APPLY_PRODUCTS = 'synchro_import.apply_products';
+
+    const POST_PROCESS_ACTUALIZE_PRODUCTS = 'synchro_import.actualize_products';
+
     /**
      * @var \Tygh\Database\Connection
      */
@@ -51,7 +55,7 @@ class CronManager
     protected $cron_password;
 
     /**
-     * @var array<string, array{name: string}>
+     * @var array<string, array{name: string, hidden?: bool}>
      */
     protected $available_scripts;
 
@@ -66,13 +70,13 @@ class CronManager
     protected $set_elements = [];
 
     /**
-     * @param \Tygh\Database\Connection          $database          Database connection
-     * @param \Tygh\Lock\Factory                 $lock_factory      Lock factory
-     * @param string                             $root_directory    Store root directory
-     * @param string                             $admin_index       Administration entry point
-     * @param string                             $cron_password     Cron access password
-     * @param array<string, array{name: string}> $available_scripts Available controller modes
-     * @param string                             $php_binary        PHP CLI binary
+     * @param \Tygh\Database\Connection                         $database          Database connection
+     * @param \Tygh\Lock\Factory                                $lock_factory      Lock factory
+     * @param string                                            $root_directory    Store root directory
+     * @param string                                            $admin_index       Administration entry point
+     * @param string                                            $cron_password     Cron access password
+     * @param array<string, array{name: string, hidden?: bool}> $available_scripts Available controller modes
+     * @param string                                            $php_binary        PHP CLI binary
      */
     public function __construct(
         Connection $database,
@@ -95,7 +99,7 @@ class CronManager
     /**
      * Gets controller modes available to the cron manager.
      *
-     * @return array<string, array{name: string}>
+     * @return array<string, array{name: string, hidden?: bool}>
      */
     public function getAvailableScripts()
     {
@@ -417,7 +421,11 @@ class CronManager
             }
 
             $start_time = time();
-            $command = $this->prepareScript((string) $script['script'], (int) $script['script_id']);
+            $command = $this->prepareScript(
+                (string) $script['script'],
+                (int) $script['script_id'],
+                (int) $script['runtime_import_id']
+            );
             $output = [];
             exec($command, $output, $exit_code);
             $execution_time = time() - $start_time;
@@ -687,6 +695,217 @@ class CronManager
     }
 
     /**
+     * Queues the post-process configured for a completed product import.
+     *
+     * @param int    $script_id        Source cron task identifier
+     * @param int    $parent_import_id Parent import identifier
+     * @param string $source_type      Import source type
+     * @param string $result_status    Import result status
+     *
+     * @return bool
+     */
+    public function queuePostProcess($script_id, $parent_import_id, $source_type, $result_status)
+    {
+        $source_script = $this->database->getRow(
+            'SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i',
+            $script_id
+        );
+        if (!$source_script) {
+            $this->logPostProcessError(
+                '',
+                $parent_import_id,
+                __('synchro.post_process_error.source_task_not_found', ['[script_id]' => $script_id])
+            );
+
+            return false;
+        }
+        $target_dispatch = isset($source_script['post_process'])
+            ? (string) $source_script['post_process']
+            : '';
+        if ($target_dispatch === '') {
+            return true;
+        }
+
+        if (!in_array($result_status, ['completed', 'partial_success'], true)) {
+            $this->logPostProcessError(
+                $target_dispatch,
+                $parent_import_id,
+                __('synchro.post_process_error.unsupported_source_status', ['[status]' => $result_status])
+            );
+
+            return false;
+        }
+
+        if (
+            $target_dispatch === self::POST_PROCESS_APPLY_PRODUCTS
+            && $source_type === 'test'
+        ) {
+            $target_dispatch = 'synchro_import.apply_test_products';
+        }
+
+        if (
+            $target_dispatch === self::POST_PROCESS_APPLY_PRODUCTS
+            && $result_status !== 'completed'
+        ) {
+            $this->logPostProcessError(
+                $target_dispatch,
+                $parent_import_id,
+                __('synchro.post_process_error.full_application_requires_completed', [
+                    '[status]' => $result_status,
+                ])
+            );
+
+            return false;
+        }
+
+        if (!$this->isScriptAllowed($target_dispatch)) {
+            $this->logPostProcessError(
+                $target_dispatch,
+                $parent_import_id,
+                __('synchro.post_process_error.dispatch_not_allowed')
+            );
+
+            return false;
+        }
+
+        $target_script_id = $this->claimPostProcessTask($target_dispatch, $parent_import_id);
+        if (!$target_script_id) {
+            return false;
+        }
+
+        if (!$this->startPostProcessTask($target_script_id, $target_dispatch, $parent_import_id)) {
+            return false;
+        }
+
+        return true;
+    }
+
+    /**
+     * Atomically reserves a post-process task for an import.
+     *
+     * @param string $dispatch  Target controller dispatch
+     * @param int    $import_id Source import identifier
+     *
+     * @return int Queued cron task identifier
+     */
+    private function claimPostProcessTask($dispatch, $import_id)
+    {
+        $target_script = $this->database->getRow(
+            'SELECT * FROM ?:cron_scripts WHERE script = ?s LIMIT 1',
+            $dispatch
+        );
+        $task_data = [
+            'status'            => 'A',
+            'run_mode'          => self::RUN_MODE_ONCE,
+            'inner_status'      => 'queued',
+            'runtime_import_id' => $import_id,
+            'last_launch'       => TIME,
+        ];
+
+        if ($target_script) {
+            $script_id = (int) $target_script['script_id'];
+            $is_queued = (bool) $this->database->query(
+                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                $task_data,
+                $script_id,
+                ['scheduled', 'completed', 'partial_success', 'failed', 'cancelled']
+            );
+            if (!$is_queued) {
+                $this->logPostProcessError(
+                    $dispatch,
+                    $import_id,
+                    __('synchro.post_process_error.task_not_available', [
+                        '[script_id]'    => $script_id,
+                        '[inner_status]' => isset($target_script['inner_status'])
+                            ? (string) $target_script['inner_status']
+                            : '',
+                    ])
+                );
+
+                return 0;
+            }
+
+            return $script_id;
+        }
+
+        $task_data += [
+            'script'           => $dispatch,
+            'period_week_days' => 'monday,tuesday,wednesday,thursday,friday,saturday,sunday',
+            'created'          => TIME,
+        ];
+        $insert_result = $this->database->query('INSERT INTO ?:cron_scripts ?e', $task_data);
+        if (!is_int($insert_result)) {
+            $this->logPostProcessError(
+                $dispatch,
+                $import_id,
+                __('synchro.post_process_error.task_creation_failed')
+            );
+
+            return 0;
+        }
+
+        return $insert_result;
+    }
+
+    /**
+     * Starts a previously queued post-process task in background.
+     *
+     * @param int    $script_id Cron task identifier
+     * @param string $dispatch  Target controller dispatch
+     * @param int    $import_id Source import identifier
+     *
+     * @return bool
+     */
+    private function startPostProcessTask($script_id, $dispatch, $import_id)
+    {
+        $output = [];
+        $exit_code = 0;
+        exec($this->prepareBackgroundCommand($script_id), $output, $exit_code);
+        if ($exit_code === 0) {
+            return true;
+        }
+
+        $this->database->query(
+            'UPDATE ?:cron_scripts SET inner_status = ?s WHERE script_id = ?i AND inner_status = ?s',
+            'failed',
+            $script_id,
+            'queued'
+        );
+        $this->logPostProcessError(
+            $dispatch,
+            $import_id,
+            __('synchro.post_process_error.task_start_failed', [
+                '[script_id]' => $script_id,
+                '[exit_code]' => $exit_code,
+                '[output]'    => implode(PHP_EOL, $output),
+            ])
+        );
+
+        return false;
+    }
+
+    /**
+     * Logs why a post-process task could not be queued.
+     *
+     * @param string $dispatch  Target controller dispatch
+     * @param int    $import_id Source import identifier
+     * @param string $reason    Failure details
+     *
+     * @return void
+     */
+    private function logPostProcessError($dispatch, $import_id, $reason)
+    {
+        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
+            'script' => $dispatch,
+            'error'  => __('synchro.post_process_not_queued', [
+                '[dispatch]'  => $dispatch,
+                '[import_id]' => $import_id,
+                '[reason]'    => $reason,
+            ]),
+        ]);
+    }
+
+    /**
      * Stops task processing when an interruption has been requested.
      *
      * @param int $script_id Cron script identifier
@@ -713,7 +932,7 @@ class CronManager
     /**
      * Logs an attempt to launch an already running script.
      *
-     * @param array<string, array<int, string>|int|string|null> $script Cron script data
+     * @param array<array-key, array<array-key, scalar>|scalar|null> $script Cron script data
      *
      * @return void
      */
@@ -749,14 +968,18 @@ class CronManager
      *
      * @param string $script    Controller dispatch
      * @param int    $script_id Cron script identifier
+     * @param int    $import_id Source import identifier
      *
      * @return string
      */
-    public function prepareScript($script, $script_id = 0)
+    public function prepareScript($script, $script_id = 0, $import_id = 0)
     {
         $arguments = ['--dispatch=' . $script];
         if ($script_id) {
             $arguments[] = '--cron_script_id=' . $script_id;
+        }
+        if ($import_id) {
+            $arguments[] = '--import_id=' . $import_id;
         }
 
         return $this->prepareCommand($arguments);
@@ -841,11 +1064,13 @@ class CronManager
      */
     public function updateProgressStatus($script_id, $status)
     {
-        return $this->database->query(
+        $result = $this->database->query(
             'UPDATE ?:cron_scripts SET progress_status = ?s WHERE script_id = ?i',
             $status,
             $script_id
         );
+
+        return is_bool($result) || is_int($result) ? $result : false;
     }
 
     /**
@@ -1005,6 +1230,16 @@ class CronManager
                 $script_data['page_limit'] = ProductImportRangeBuilder::TEST_PAGE_LIMIT;
                 $script_data['max_parallel_processes'] = 1;
             }
+
+            $allowed_post_processes = [
+                '',
+                self::POST_PROCESS_APPLY_PRODUCTS,
+                self::POST_PROCESS_ACTUALIZE_PRODUCTS,
+            ];
+            $script_data['post_process'] = isset($script_data['post_process'])
+                && in_array($script_data['post_process'], $allowed_post_processes, true)
+                ? $script_data['post_process']
+                : '';
         }
 
         $current_script = $script_id
@@ -1040,6 +1275,7 @@ class CronManager
             'max_parallel_processes',
             'is_test_import',
             'test_page',
+            'post_process',
         ]));
         if ($reset_inner_status) {
             $script_data['inner_status'] = 'scheduled';

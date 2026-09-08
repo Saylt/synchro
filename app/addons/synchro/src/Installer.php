@@ -114,6 +114,8 @@ CREATE TABLE IF NOT EXISTS ?:cron_scripts (
     max_parallel_processes int(11) unsigned NOT NULL DEFAULT '3',
     is_test_import char(1) NOT NULL DEFAULT 'N',
     test_page int(11) unsigned NOT NULL DEFAULT '1',
+    post_process varchar(64) NOT NULL DEFAULT '',
+    runtime_import_id int(11) unsigned NOT NULL DEFAULT '0',
     created int(11) NOT NULL DEFAULT '0',
     last_launch int(11) NOT NULL DEFAULT '0',
     period_month_days set(
@@ -233,6 +235,7 @@ CREATE TABLE IF NOT EXISTS ?:synchro_import_entity_map (
     entity_name varchar(255) NOT NULL DEFAULT '',
     full_updated_timestamp int(11) unsigned NOT NULL DEFAULT '0',
     actualized_timestamp int(11) unsigned NOT NULL DEFAULT '0',
+    needs_archiving char(1) NOT NULL DEFAULT 'N',
     PRIMARY KEY (company_id, entity_type, external_id),
     KEY idx_local_entity (company_id, entity_type, local_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8

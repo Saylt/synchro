@@ -2,6 +2,7 @@
 
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
+use Tygh\Addons\Synchro\ProductApplicationManager;
 use Tygh\Addons\Synchro\ServiceProvider;
 use Tygh\Http;
 use Tygh\Registry;
@@ -15,6 +16,64 @@ $cron_script_id = isset($_REQUEST['cron_script_id']) && is_scalar($_REQUEST['cro
     ? (int) $_REQUEST['cron_script_id']
     : 0;
 $company_id = fn_get_runtime_company_id();
+$source_import_id = isset($_REQUEST['import_id']) && is_scalar($_REQUEST['import_id'])
+    ? (int) $_REQUEST['import_id']
+    : 0;
+
+if ($mode === 'apply_products') {
+    if (!$source_import_id) {
+        return [CONTROLLER_STATUS_NO_PAGE];
+    }
+
+    try {
+        ServiceProvider::getProductApplicationManager()->apply(
+            $source_import_id,
+            ProductApplicationManager::MODE_FULL,
+            $cron_script_id
+        );
+    } catch (TaskInterruptedException $exception) {
+        return [CONTROLLER_STATUS_NO_CONTENT];
+    }
+
+    return [CONTROLLER_STATUS_NO_CONTENT];
+}
+
+if ($mode === 'apply_test_products') {
+    if (!$source_import_id) {
+        return [CONTROLLER_STATUS_NO_PAGE];
+    }
+
+    try {
+        ServiceProvider::getProductApplicationManager()->apply(
+            $source_import_id,
+            ProductApplicationManager::MODE_TEST,
+            $cron_script_id
+        );
+    } catch (TaskInterruptedException $exception) {
+        return [CONTROLLER_STATUS_NO_CONTENT];
+    }
+
+    return [CONTROLLER_STATUS_NO_CONTENT];
+}
+
+if ($mode === 'actualize_products') {
+    if (!$source_import_id) {
+        return [CONTROLLER_STATUS_NO_PAGE];
+    }
+
+    try {
+        ServiceProvider::getProductApplicationManager()->apply(
+            $source_import_id,
+            ProductApplicationManager::MODE_ACTUALIZE,
+            $cron_script_id
+        );
+    } catch (TaskInterruptedException $exception) {
+        return [CONTROLLER_STATUS_NO_CONTENT];
+    }
+
+    return [CONTROLLER_STATUS_NO_CONTENT];
+}
+
 $api_url = 'https://svetelektro.net/index.php?option=com_vmtools&task=exportall.make'
     . '&centerkey=54ffc087d87dae187499273060174614';
 
@@ -68,6 +127,8 @@ if ($mode === 'products') {
     if (!$script) {
         return [CONTROLLER_STATUS_NO_PAGE];
     }
+
+    /** @var array<string, array<int, string>|int|null|string> $script */
 
     try {
         if ($script['is_test_import'] === 'Y') {

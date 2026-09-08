@@ -2,16 +2,22 @@
 
 namespace Tygh\Addons\Synchro;
 
-function fn_log_event()
+function fn_log_event($type, $action, array $data)
 {
+    if (isset($GLOBALS['synchro_cron_log_event'])) {
+        call_user_func($GLOBALS['synchro_cron_log_event'], $type, $action, $data);
+    }
 }
 
-function __($language_variable)
+function __($language_variable, array $params = [])
 {
-    return $language_variable;
+    return $language_variable . json_encode($params);
 }
 
 namespace Tygh\Addons\Synchro\Tests\Unit;
+
+defined('TIME') or define('TIME', time());
+defined('SECONDS_IN_DAY') or define('SECONDS_IN_DAY', 86400);
 
 use Tygh\Addons\Synchro\CronManager;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
@@ -22,6 +28,13 @@ use Tygh\Tests\Unit\ATestCase;
 
 class CronManagerTest extends ATestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        unset($GLOBALS['synchro_cron_log_event']);
+    }
+
     public function testUnregisteredScriptCannotBeSaved()
     {
         $database = $this->createDatabase();
@@ -57,6 +70,7 @@ class CronManagerTest extends ATestCase
                     'max_parallel_processes'  => 1,
                     'is_test_import'          => 'Y',
                     'test_page'               => 25,
+                    'post_process'             => '',
                     'created'                 => TIME,
                 ]
             )
@@ -88,6 +102,78 @@ class CronManagerTest extends ATestCase
             "'/usr/bin/php' '/store/admin.php' '--dispatch=synchro_import.products' '--cron_script_id=15'",
             $command
         );
+    }
+
+    public function testPostProcessCommandReceivesSourceImportId()
+    {
+        $command = $this->createManager($this->createDatabase())->prepareScript(
+            'synchro_import.apply_products',
+            16,
+            10
+        );
+
+        $this->assertSame(
+            "'/usr/bin/php' '/store/admin.php' '--dispatch=synchro_import.apply_products'"
+            . " '--cron_script_id=16' '--import_id=10'",
+            $command
+        );
+    }
+
+    public function testCompletedImportQueuesConfiguredPostProcess()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->exactly(2))
+            ->method('getRow')
+            ->withConsecutive(
+                ['SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i', 15],
+                ['SELECT * FROM ?:cron_scripts WHERE script = ?s LIMIT 1', 'synchro_import.apply_products']
+            )
+            ->willReturnOnConsecutiveCalls(
+                ['post_process' => 'synchro_import.apply_products'],
+                ['script_id' => 16, 'inner_status' => 'completed']
+            );
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                [
+                    'status'            => 'A',
+                    'run_mode'          => 'once',
+                    'inner_status'      => 'queued',
+                    'runtime_import_id' => 10,
+                    'last_launch'       => TIME,
+                ],
+                16,
+                ['scheduled', 'completed', 'partial_success', 'failed', 'cancelled']
+            )
+            ->willReturn(1);
+        $scripts = [
+            'synchro_import.products' => ['name' => 'synchro.import_products'],
+            'synchro_import.apply_products' => ['name' => 'synchro.apply_products'],
+        ];
+
+        $this->assertTrue($this->createManager(
+            $database,
+            null,
+            '/usr/bin/true',
+            $scripts
+        )->queuePostProcess(15, 10, 'full', 'completed'));
+    }
+
+    public function testLogsSourceStatusWhenFullPostProcessCannotRunAfterPartialImport()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('getRow')
+            ->with('SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i', 15)
+            ->willReturn(['post_process' => 'synchro_import.apply_products']);
+        $logged_error = '';
+        $GLOBALS['synchro_cron_log_event'] = static function ($type, $action, array $data) use (&$logged_error) {
+            $logged_error = $data['error'];
+        };
+
+        $this->assertFalse($this->createManager($database)->queuePostProcess(15, 10, 'full', 'partial_success'));
+        $this->assertStringContainsString('partial_success', $logged_error);
     }
 
     public function testProgressStatusCanBeUpdated()
@@ -404,6 +490,7 @@ class CronManagerTest extends ATestCase
             'run_mode'     => 'once',
             'inner_status' => 'queued',
             'last_launch'  => TIME,
+            'runtime_import_id' => 0,
         ]);
 
         $this->assertTrue($result);
@@ -456,6 +543,7 @@ class CronManagerTest extends ATestCase
             'run_mode'     => 'once',
             'inner_status' => 'queued',
             'last_launch'  => TIME,
+            'runtime_import_id' => 0,
         ]);
 
         $this->assertFalse($result);
@@ -479,7 +567,12 @@ class CronManagerTest extends ATestCase
      *
      * @return \Tygh\Addons\Synchro\CronManager
      */
-    private function createManager(Connection $database, Factory $lock_factory = null, $php_binary = '/usr/bin/php')
+    private function createManager(
+        Connection $database,
+        Factory $lock_factory = null,
+        $php_binary = '/usr/bin/php',
+        array $available_scripts = null
+    )
     {
         if ($lock_factory === null) {
             $lock_factory = $this->getMockBuilder(Factory::class)
@@ -493,7 +586,7 @@ class CronManagerTest extends ATestCase
             '/store',
             'admin.php',
             'secret',
-            [
+            $available_scripts ?: [
                 'synchro_import.products' => [
                     'name' => 'synchro.import_products',
                 ],

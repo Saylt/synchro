@@ -2,6 +2,9 @@
 
 namespace Tygh\Addons\Synchro\Tests\Unit;
 
+defined('TIME') or define('TIME', time());
+
+use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Database\Connection;
@@ -170,6 +173,19 @@ class ImportEntityRepositoryHierarchyTest extends ATestCase
         $this->assertCount(2, $products);
         $this->assertSame('Updated name', $products[0]->name);
         $this->assertSame('Second product', $products[1]->name);
+    }
+
+    public function testRejectsEntityWithUnexpectedTypeFromBoundedBatch()
+    {
+        $category = new CategoryDto();
+        $category->id = 7;
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('getColumn')
+            ->willReturn([serialize($category)]);
+
+        $this->expectException(\UnexpectedValueException::class);
+        (new ImportEntityRepository($database))->findEntityBatch([41], ProductDto::ENTITY_TYPE, '', 100);
     }
 
     /**

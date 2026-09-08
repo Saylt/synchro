@@ -14,7 +14,7 @@ function fn_clear_cron_info()
     $root_directory = rtrim((string) Registry::get('config.dir.root'), '/');
     $admin_index = (string) Registry::get('config.admin_index');
     $cron_password = (string) Registry::get('settings.Security.cron_password');
-    $cron_set_string = '0-59 * * * * php'
+    $cron_set_string = '* * * * * php'
         . ' ' . $root_directory . '/' . $admin_index
         . ' --dispatch=cron_script_manager.launcher'
         . ' --cron_password=' . $cron_password;
