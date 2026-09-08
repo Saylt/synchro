@@ -27,6 +27,8 @@ class CronManager
 
     const POST_PROCESS_APPLY_PRODUCTS = 'synchro_import.apply_products';
 
+    const POST_PROCESS_APPLY_CATEGORIES = 'synchro_import.apply_categories';
+
     const POST_PROCESS_ACTUALIZE_PRODUCTS = 'synchro_import.actualize_products';
 
     /**
@@ -833,8 +835,8 @@ class CronManager
             'period_week_days' => 'monday,tuesday,wednesday,thursday,friday,saturday,sunday',
             'created'          => TIME,
         ];
-        $insert_result = $this->database->query('INSERT INTO ?:cron_scripts ?e', $task_data);
-        if (!is_int($insert_result)) {
+        $insert_result = (int) $this->database->query('INSERT INTO ?:cron_scripts ?e', $task_data);
+        if (!$insert_result) {
             $this->logPostProcessError(
                 $dispatch,
                 $import_id,
@@ -1070,7 +1072,7 @@ class CronManager
             $script_id
         );
 
-        return is_bool($result) || is_int($result) ? $result : false;
+        return $result === false ? false : (int) $result;
     }
 
     /**
@@ -1230,17 +1232,29 @@ class CronManager
                 $script_data['page_limit'] = ProductImportRangeBuilder::TEST_PAGE_LIMIT;
                 $script_data['max_parallel_processes'] = 1;
             }
+        }
 
-            $allowed_post_processes = [
+        $allowed_post_processes = [
+            'synchro_import.products' => [
                 '',
                 self::POST_PROCESS_APPLY_PRODUCTS,
                 self::POST_PROCESS_ACTUALIZE_PRODUCTS,
-            ];
-            $script_data['post_process'] = isset($script_data['post_process'])
-                && in_array($script_data['post_process'], $allowed_post_processes, true)
-                ? $script_data['post_process']
-                : '';
-        }
+            ],
+            'synchro_import.categories' => [
+                '',
+                self::POST_PROCESS_APPLY_CATEGORIES,
+            ],
+        ];
+        $script_data['post_process'] = isset($script_data['post_process'])
+            && in_array(
+                $script_data['post_process'],
+                isset($allowed_post_processes[$script_data['script']])
+                    ? $allowed_post_processes[$script_data['script']]
+                    : [''],
+                true
+            )
+            ? $script_data['post_process']
+            : '';
 
         $current_script = $script_id
             ? $this->database->getRow(
@@ -1307,9 +1321,9 @@ class CronManager
             );
         } else {
             $script_data['created'] = TIME;
-            $script_id = $this->database->query('INSERT INTO ?:cron_scripts ?e', $script_data);
+            $script_id = (int) $this->database->query('INSERT INTO ?:cron_scripts ?e', $script_data);
         }
 
-        return $script_id;
+        return $script_id ? (int) $script_id : false;
     }
 }

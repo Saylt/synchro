@@ -540,6 +540,10 @@ msgctxt "Languages::synchro.apply_products"
 msgid "Import products into the catalog"
 msgstr "Import products into the catalog"
 
+msgctxt "Languages::synchro.apply_categories"
+msgid "Import categories into the catalog"
+msgstr "Import categories into the catalog"
+
 msgctxt "Languages::synchro.apply_test_products"
 msgid "Import test products into the catalog"
 msgstr "Import test products into the catalog"
@@ -559,6 +563,14 @@ msgstr "Queues the selected processing task as soon as the API import finishes. 
 msgctxt "Languages::synchro.applied_products"
 msgid "Applied products: [count]"
 msgstr "Applied products: [count]"
+
+msgctxt "Languages::synchro.applied_categories"
+msgid "Imported [count] of [total] categories"
+msgstr "Imported [count] of [total] categories"
+
+msgctxt "Languages::synchro.disabling_missing_categories"
+msgid "Disabling missing categories"
+msgstr "Disabling missing categories"
 
 msgctxt "Languages::synchro.post_process_not_queued"
 msgid "Post-process [dispatch] could not be queued for import [import_id]: [reason]."

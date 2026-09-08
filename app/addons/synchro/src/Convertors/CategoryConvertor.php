@@ -57,7 +57,7 @@ class CategoryConvertor implements ConvertorInterface
 
         $this->cron_manager->ensureTaskCanContinue($cron_script_id);
         $categories = array_values($categories);
-        $this->repository->batchSave($import_id, $this->company_id, $categories);
+        $this->repository->batchSaveCategories($import_id, $this->company_id, $categories);
 
         return $categories;
     }

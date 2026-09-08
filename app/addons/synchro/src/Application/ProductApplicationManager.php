@@ -1,11 +1,13 @@
 <?php
 
-namespace Tygh\Addons\Synchro;
+namespace Tygh\Addons\Synchro\Application;
 
 use InvalidArgumentException;
 use RuntimeException;
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
+use Tygh\Addons\Synchro\CronManager;
 use Tygh\Addons\Synchro\Dto\ProductDto;
+use Tygh\Addons\Synchro\ImportedProductFeatureReader;
 use Tygh\Addons\Synchro\Importers\ProductFeatureImporter;
 use Tygh\Addons\Synchro\Importers\ProductImporter;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;

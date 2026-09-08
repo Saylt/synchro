@@ -5,6 +5,8 @@ namespace Tygh\Addons\Synchro;
 use Pimple\Container;
 use Pimple\ServiceProviderInterface;
 use Symfony\Component\Process\PhpExecutableFinder;
+use Tygh\Addons\Synchro\Application\CategoryApplicationManager;
+use Tygh\Addons\Synchro\Application\ProductApplicationManager;
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Commands\ImportDataCommandHandler;
 use Tygh\Addons\Synchro\Convertors\CategoryConvertor;
@@ -153,6 +155,15 @@ class ServiceProvider implements ServiceProviderInterface
             );
         };
 
+        $app['addons.synchro.category_application_manager'] = static function (Container $app) {
+            return new CategoryApplicationManager(
+                $app['addons.synchro.repository.import_entity'],
+                $app['addons.synchro.importers.category'],
+                $app['addons.synchro.repository.import_entity_map'],
+                $app['addons.synchro.cron_manager']
+            );
+        };
+
         $app['addons.synchro.convertors.product'] = static function (Container $app) {
             return new ProductConvertor(
                 $app['addons.synchro.repository.import_entity'],
@@ -291,11 +302,19 @@ class ServiceProvider implements ServiceProviderInterface
     }
 
     /**
-     * @return \Tygh\Addons\Synchro\ProductApplicationManager
+     * @return \Tygh\Addons\Synchro\Application\ProductApplicationManager
      */
     public static function getProductApplicationManager()
     {
         return Tygh::$app['addons.synchro.product_application_manager'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\Application\CategoryApplicationManager
+     */
+    public static function getCategoryApplicationManager()
+    {
+        return Tygh::$app['addons.synchro.category_application_manager'];
     }
 
     /**

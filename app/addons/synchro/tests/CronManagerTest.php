@@ -74,7 +74,7 @@ class CronManagerTest extends ATestCase
                     'created'                 => TIME,
                 ]
             )
-            ->willReturn(15);
+            ->willReturn('15');
 
         $result = $this->createManager($database)->updateScriptData([
             'script'                  => 'synchro_import.products',
@@ -89,6 +89,100 @@ class CronManagerTest extends ATestCase
         ]);
 
         $this->assertSame(15, $result);
+    }
+
+    public function testCategoryApplicationPostProcessIsAllowed()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->once())->method('query')
+            ->with(
+                'INSERT INTO ?:cron_scripts ?e',
+                $this->callback(static function (array $script_data) {
+                    return $script_data['script'] === 'synchro_import.categories'
+                        && $script_data['post_process'] === CronManager::POST_PROCESS_APPLY_CATEGORIES;
+                })
+            )
+            ->willReturn(15);
+
+        $this->assertSame(15, $this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            ['synchro_import.categories' => ['name' => 'synchro.import_categories']]
+        )->updateScriptData([
+            'script'       => 'synchro_import.categories',
+            'period_week_days' => ['monday'],
+            'run_mode'     => 'once',
+            'post_process' => CronManager::POST_PROCESS_APPLY_CATEGORIES,
+        ]));
+    }
+
+    /**
+     * @dataProvider productPostProcessesProvider
+     *
+     * @param string $post_process Product post-process dispatch
+     *
+     * @return void
+     */
+    public function testCategoryImportRejectsProductPostProcess($post_process)
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->once())->method('query')
+            ->with(
+                'INSERT INTO ?:cron_scripts ?e',
+                $this->callback(static function (array $script_data) {
+                    return $script_data['post_process'] === '';
+                })
+            )
+            ->willReturn(15);
+
+        $this->assertSame(15, $this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            ['synchro_import.categories' => ['name' => 'synchro.import_categories']]
+        )->updateScriptData([
+            'script'       => 'synchro_import.categories',
+            'period_week_days' => ['monday'],
+            'run_mode'     => 'once',
+            'post_process' => $post_process,
+        ]));
+    }
+
+    /**
+     * Provides product-only post-process dispatches.
+     *
+     * @return array<array{string}>
+     */
+    public function productPostProcessesProvider()
+    {
+        return [
+            [CronManager::POST_PROCESS_APPLY_PRODUCTS],
+            [CronManager::POST_PROCESS_ACTUALIZE_PRODUCTS],
+        ];
+    }
+
+    public function testProductImportRejectsCategoryPostProcess()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->once())->method('query')
+            ->with(
+                'INSERT INTO ?:cron_scripts ?e',
+                $this->callback(static function (array $script_data) {
+                    return $script_data['post_process'] === '';
+                })
+            )
+            ->willReturn(15);
+
+        $this->assertSame(15, $this->createManager($database)->updateScriptData([
+            'script'           => 'synchro_import.products',
+            'period_week_days' => ['monday'],
+            'run_mode'         => 'once',
+            'post_process'     => CronManager::POST_PROCESS_APPLY_CATEGORIES,
+        ]));
     }
 
     public function testControllerCommandReceivesCronScriptId()
@@ -160,6 +254,47 @@ class CronManagerTest extends ATestCase
         )->queuePostProcess(15, 10, 'full', 'completed'));
     }
 
+    public function testCompletedImportQueuesPostProcessWithStringTaskId()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->exactly(2))
+            ->method('getRow')
+            ->withConsecutive(
+                ['SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i', 15],
+                ['SELECT * FROM ?:cron_scripts WHERE script = ?s LIMIT 1', 'synchro_import.apply_products']
+            )
+            ->willReturnOnConsecutiveCalls(
+                ['post_process' => 'synchro_import.apply_products'],
+                []
+            );
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'INSERT INTO ?:cron_scripts ?e',
+                [
+                    'status'            => 'A',
+                    'run_mode'          => 'once',
+                    'inner_status'      => 'queued',
+                    'runtime_import_id' => 10,
+                    'last_launch'       => TIME,
+                    'script'            => 'synchro_import.apply_products',
+                    'period_week_days'  => 'monday,tuesday,wednesday,thursday,friday,saturday,sunday',
+                    'created'           => TIME,
+                ]
+            )
+            ->willReturn('16');
+
+        $this->assertTrue($this->createManager(
+            $database,
+            null,
+            '/usr/bin/true',
+            [
+                'synchro_import.products' => ['name' => 'synchro.import_products'],
+                'synchro_import.apply_products' => ['name' => 'synchro.apply_products'],
+            ]
+        )->queuePostProcess(15, 10, 'full', 'completed'));
+    }
+
     public function testLogsSourceStatusWhenFullPostProcessCannotRunAfterPartialImport()
     {
         $database = $this->createDatabase();
@@ -186,7 +321,7 @@ class CronManagerTest extends ATestCase
                 'Page 4 of 10',
                 15
             )
-            ->willReturn(1);
+            ->willReturn('1');
         $manager = $this->createManager($database);
 
         $this->assertTrue(is_callable([$manager, 'updateProgressStatus']));

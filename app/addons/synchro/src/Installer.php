@@ -181,6 +181,7 @@ CREATE TABLE IF NOT EXISTS ?:synchro_imports (
     total_pages int(11) unsigned NOT NULL DEFAULT '0',
     max_parallel_processes int(11) unsigned NOT NULL DEFAULT '1',
     error_message text NOT NULL,
+    application_cursor int(11) unsigned NOT NULL DEFAULT '0',
     created_at int(11) unsigned NOT NULL DEFAULT '0',
     started_at int(11) unsigned NOT NULL DEFAULT '0',
     updated_at int(11) unsigned NOT NULL DEFAULT '0',
@@ -208,11 +209,13 @@ CREATE TABLE IF NOT EXISTS ?:synchro_import_entities (
     company_id int(11) unsigned NOT NULL DEFAULT '0',
     entity_id varchar(128) NOT NULL DEFAULT '',
     entity_type varchar(64) NOT NULL DEFAULT '',
+    application_position int(11) unsigned NOT NULL DEFAULT '0',
     entity mediumblob NOT NULL,
     created_at int(11) unsigned NOT NULL DEFAULT '0',
     updated_at int(11) unsigned NOT NULL DEFAULT '0',
     PRIMARY KEY (import_id, entity_type, entity_id),
-    KEY idx_entity_type (company_id, entity_type, import_id)
+    KEY idx_entity_type (company_id, entity_type, import_id),
+    KEY idx_application_batch (import_id, entity_type, application_position)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 

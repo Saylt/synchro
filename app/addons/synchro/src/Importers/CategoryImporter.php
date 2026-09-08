@@ -5,12 +5,13 @@ namespace Tygh\Addons\Synchro\Importers;
 use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
+use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Common\OperationResult;
 use Tygh\Database\Connection;
 use Tygh\Enum\ObjectStatuses;
 
 /**
- * Imports a complete category snapshot into CS-Cart.
+ * Imports persisted category batches into CS-Cart.
  */
 class CategoryImporter
 {
@@ -41,124 +42,72 @@ class CategoryImporter
     }
 
     /**
-     * Imports a complete category snapshot into CS-Cart.
+     * Imports one persisted parent-first category batch.
      *
-     * @param array<\Tygh\Addons\Synchro\Dto\CategoryDto> $categories Imported categories
+     * @param array<\Tygh\Addons\Synchro\Dto\CategoryDto> $categories Category DTOs in application order
      * @param int                                         $company_id Company identifier
      *
      * @return array<string, int> Local category identifiers indexed by external identifiers
      */
-    public function import(array $categories, $company_id)
+    public function importBatch(array $categories, $company_id)
     {
-        $categories_by_id = $this->indexCategories($categories);
-        $ordered_categories = $this->orderCategories($categories_by_id);
-        $mappings = $this->mapping_repository->findAllByEntityType($company_id, CategoryDto::ENTITY_TYPE);
+        if (!$categories) {
+            return [];
+        }
+
+        $external_ids = [];
+        foreach ($categories as $category) {
+            $external_ids[] = $category->getEntityId();
+            $parent_external_id = $this->getParentExternalId($category);
+            if ($parent_external_id !== '') {
+                $external_ids[] = $parent_external_id;
+            }
+        }
+        $mappings = $this->mapping_repository->findByExternalIds(
+            $company_id,
+            CategoryDto::ENTITY_TYPE,
+            array_values(array_unique($external_ids))
+        );
         $existing_category_ids = $this->findExistingCategoryIds($mappings);
         $current_images = $this->image_importer->findByObjectIds(
             'category',
             array_keys($existing_category_ids)
         );
-        $imported_category_ids = $this->importCategories(
-            $ordered_categories,
+
+        return $this->importCategories(
+            $categories,
             $company_id,
             $mappings,
             $existing_category_ids,
             $current_images
         );
-
-        $this->disableMissingCategories($categories_by_id, $mappings, $existing_category_ids);
-
-        return $imported_category_ids;
     }
 
     /**
-     * Indexes categories by their external identifiers and skips duplicates.
+     * Disables every mapped category that does not belong to a staged snapshot.
      *
-     * @param array<\Tygh\Addons\Synchro\Dto\CategoryDto> $categories Imported categories
+     * @param int $import_id  Completed category import identifier
+     * @param int $company_id Company identifier
      *
-     * @return array<string, \Tygh\Addons\Synchro\Dto\CategoryDto>
+     * @return bool
      */
-    private function indexCategories(array $categories)
+    public function disableMissingCategories($import_id, $company_id)
     {
-        $categories_by_id = [];
-
-        foreach ($categories as $category) {
-            $external_id = $category->getEntityId();
-            if (isset($categories_by_id[$external_id])) {
-                $this->logError(__('synchro.category_import_error.duplicate', [
-                    '[external_id]' => $external_id,
-                ]));
-                continue;
-            }
-
-            $categories_by_id[$external_id] = $category;
-        }
-
-        return $categories_by_id;
-    }
-
-    /**
-     * Orders valid categories from roots to leaves.
-     *
-     * @param array<string, \Tygh\Addons\Synchro\Dto\CategoryDto> $categories_by_id Categories indexed by external ID
-     *
-     * @return array<\Tygh\Addons\Synchro\Dto\CategoryDto>
-     */
-    private function orderCategories(array $categories_by_id)
-    {
-        $ordered_categories = [];
-        $resolved_categories = [];
-        $skipped_categories = [];
-        $remaining_categories = $categories_by_id;
-
-        while ($remaining_categories) {
-            $remaining_count = count($remaining_categories);
-
-            foreach ($remaining_categories as $external_id => $category) {
-                $parent_external_id = $this->getParentExternalId($category);
-
-                if ($parent_external_id !== '' && !isset($categories_by_id[$parent_external_id])) {
-                    $this->logError(__('synchro.category_import_error.parent_not_found', [
-                        '[external_id]'        => $external_id,
-                        '[parent_external_id]' => $parent_external_id,
-                    ]));
-                    $skipped_categories[$external_id] = true;
-                    unset($remaining_categories[$external_id]);
-                    continue;
-                }
-
-                if ($parent_external_id !== '' && isset($skipped_categories[$parent_external_id])) {
-                    $this->logError(__('synchro.category_import_error.parent_not_imported', [
-                        '[external_id]'        => $external_id,
-                        '[parent_external_id]' => $parent_external_id,
-                    ]));
-                    $skipped_categories[$external_id] = true;
-                    unset($remaining_categories[$external_id]);
-                    continue;
-                }
-
-                if ($parent_external_id !== '' && !isset($resolved_categories[$parent_external_id])) {
-                    continue;
-                }
-
-                $ordered_categories[] = $category;
-                $resolved_categories[$external_id] = true;
-                unset($remaining_categories[$external_id]);
-            }
-
-            if ($remaining_count !== count($remaining_categories)) {
-                continue;
-            }
-
-            foreach (array_keys($remaining_categories) as $external_id) {
-                $this->logError(__('synchro.category_import_error.cycle', [
-                    '[external_id]' => $external_id,
-                ]));
-            }
-            break;
-        }
-
-        return $ordered_categories;
+        return $this->database->query(
+            'UPDATE ?:categories AS categories'
+            . ' INNER JOIN ?:?p AS mappings ON mappings.local_id = categories.category_id'
+            . ' LEFT JOIN ?:?p AS entities ON entities.import_id = ?i'
+            . ' AND entities.entity_type = ?s AND entities.entity_id = mappings.external_id'
+            . ' SET categories.status = ?s'
+            . ' WHERE mappings.company_id = ?i AND mappings.entity_type = ?s AND entities.entity_id IS NULL',
+            ImportEntityMapRepository::TABLE_NAME,
+            ImportEntityRepository::TABLE_NAME,
+            $import_id,
+            CategoryDto::ENTITY_TYPE,
+            ObjectStatuses::DISABLED,
+            $company_id,
+            CategoryDto::ENTITY_TYPE
+        ) !== false;
     }
 
     /**
@@ -192,7 +141,7 @@ class CategoryImporter
     }
 
     /**
-     * Applies ordered categories and their images to CS-Cart.
+     * Applies parent-first categories and their images to CS-Cart.
      *
      * @param array<\Tygh\Addons\Synchro\Dto\CategoryDto>                                                     $categories            Ordered categories
      * @param int                                                                                             $company_id            Company identifier
@@ -210,6 +159,7 @@ class CategoryImporter
         array $current_images
     ) {
         $imported_category_ids = [];
+        $resolved_parent_category_ids = [];
 
         foreach ($categories as $category) {
             $external_id = $category->getEntityId();
@@ -218,7 +168,15 @@ class CategoryImporter
             $category_id = isset($existing_category_ids[$mapped_category_id]) ? $mapped_category_id : 0;
             $parent_external_id = $this->getParentExternalId($category);
 
-            if ($parent_external_id !== '' && !isset($imported_category_ids[$parent_external_id])) {
+            if ($parent_external_id !== '' && !isset($resolved_parent_category_ids[$parent_external_id])) {
+                $parent_mapping = isset($mappings[$parent_external_id]) ? $mappings[$parent_external_id] : [];
+                $parent_category_id = isset($parent_mapping['local_id']) ? (int) $parent_mapping['local_id'] : 0;
+                if (isset($existing_category_ids[$parent_category_id])) {
+                    $resolved_parent_category_ids[$parent_external_id] = $parent_category_id;
+                }
+            }
+
+            if ($parent_external_id !== '' && !isset($resolved_parent_category_ids[$parent_external_id])) {
                 $this->logError(__('synchro.category_import_error.parent_not_imported', [
                     '[external_id]'        => $external_id,
                     '[parent_external_id]' => $parent_external_id,
@@ -228,7 +186,7 @@ class CategoryImporter
 
             $category_id = fn_update_category([
                 'company_id'  => $company_id,
-                'parent_id'   => $parent_external_id === '' ? 0 : $imported_category_ids[$parent_external_id],
+                'parent_id'   => $parent_external_id === '' ? 0 : $resolved_parent_category_ids[$parent_external_id],
                 'status'      => $category->status ? ObjectStatuses::ACTIVE : ObjectStatuses::DISABLED,
                 'category'    => $category->name,
                 'description' => $category->description,
@@ -250,6 +208,7 @@ class CategoryImporter
                 $category->name
             );
             $imported_category_ids[$external_id] = $category_id;
+            $resolved_parent_category_ids[$external_id] = $category_id;
             $image_urls = $category->images ? [reset($category->images)] : [];
 
             $image_result = $this->image_importer->import(
@@ -263,41 +222,6 @@ class CategoryImporter
         }
 
         return $imported_category_ids;
-    }
-
-    /**
-     * Disables mapped categories that are absent from the external snapshot.
-     *
-     * @param array<string, \Tygh\Addons\Synchro\Dto\CategoryDto> $categories_by_id      Imported categories
-     * @param array<string, array<string, int|string>>            $mappings              Category mappings
-     * @param array<int, true>                                    $existing_category_ids Existing category identifiers
-     *
-     * @return void
-     */
-    private function disableMissingCategories(
-        array $categories_by_id,
-        array $mappings,
-        array $existing_category_ids
-    ) {
-        foreach ($mappings as $external_id => $mapping) {
-            $category_id = (int) $mapping['local_id'];
-            if (isset($categories_by_id[$external_id]) || !isset($existing_category_ids[$category_id])) {
-                continue;
-            }
-
-            if (
-                !fn_tools_update_status([
-                    'table'   => 'categories',
-                    'id_name' => 'category_id',
-                    'id'      => $category_id,
-                    'status'  => ObjectStatuses::DISABLED,
-                ])
-            ) {
-                $this->logError(__('synchro.category_import_error.disable_failed', [
-                    '[external_id]' => $external_id,
-                ]));
-            }
-        }
     }
 
     /**

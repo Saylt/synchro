@@ -1,8 +1,10 @@
 <?php
 
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
+use Tygh\Addons\Synchro\Application\ProductApplicationManager;
+use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
-use Tygh\Addons\Synchro\ProductApplicationManager;
+use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Addons\Synchro\ServiceProvider;
 use Tygh\Http;
 use Tygh\Registry;
@@ -19,6 +21,28 @@ $company_id = fn_get_runtime_company_id();
 $source_import_id = isset($_REQUEST['import_id']) && is_scalar($_REQUEST['import_id'])
     ? (int) $_REQUEST['import_id']
     : 0;
+$log_exception = static function (Throwable $exception) use ($mode) {
+    fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
+        'script' => 'synchro_import.' . $mode,
+        'error'  => $exception->getMessage(),
+    ]);
+};
+
+if ($mode === 'apply_categories') {
+    if (!$source_import_id) {
+        return [CONTROLLER_STATUS_NO_PAGE];
+    }
+
+    try {
+        ServiceProvider::getCategoryApplicationManager()->apply($source_import_id, $cron_script_id);
+    } catch (TaskInterruptedException $exception) {
+        $log_exception($exception);
+
+        return [CONTROLLER_STATUS_NO_CONTENT];
+    }
+
+    return [CONTROLLER_STATUS_NO_CONTENT];
+}
 
 if ($mode === 'apply_products') {
     if (!$source_import_id) {
@@ -32,6 +56,8 @@ if ($mode === 'apply_products') {
             $cron_script_id
         );
     } catch (TaskInterruptedException $exception) {
+        $log_exception($exception);
+
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
 
@@ -50,6 +76,8 @@ if ($mode === 'apply_test_products') {
             $cron_script_id
         );
     } catch (TaskInterruptedException $exception) {
+        $log_exception($exception);
+
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
 
@@ -68,6 +96,8 @@ if ($mode === 'actualize_products') {
             $cron_script_id
         );
     } catch (TaskInterruptedException $exception) {
+        $log_exception($exception);
+
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
 
@@ -150,6 +180,8 @@ if ($mode === 'products') {
         $import_process_manager->dispatchPending($parent_import_id);
         $import_process_manager->reconcileParent($parent_import_id);
     } catch (TaskInterruptedException $exception) {
+        $log_exception($exception);
+
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
 
@@ -215,10 +247,12 @@ if ($mode === 'product_process') {
         $import_process_manager->completeProcess($import_id);
     } catch (TaskInterruptedException $exception) {
         $import_process_manager->cancelProcess($import_id);
+        $log_exception($exception);
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
         $import_process_manager->failProcess($import_id, $exception->getMessage());
+        $log_exception($exception);
 
         throw $exception;
     }
@@ -244,12 +278,22 @@ if ($mode === 'categories') {
             )
         );
         $import_repository->completeImport($import_id);
+        if ($cron_script_id) {
+            $cron_manager->queuePostProcess(
+                $cron_script_id,
+                $import_id,
+                ImportEntityRepository::SOURCE_TYPE_FULL,
+                ImportEntityRepository::STATUS_COMPLETED
+            );
+        }
     } catch (TaskInterruptedException $exception) {
         $import_repository->failImport($import_id);
+        $log_exception($exception);
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
         $import_repository->failImport($import_id);
+        $log_exception($exception);
 
         throw $exception;
     }
@@ -277,10 +321,12 @@ if ($mode === 'manufacturers') {
         $import_repository->completeImport($import_id);
     } catch (TaskInterruptedException $exception) {
         $import_repository->failImport($import_id);
+        $log_exception($exception);
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
         $import_repository->failImport($import_id);
+        $log_exception($exception);
 
         throw $exception;
     }

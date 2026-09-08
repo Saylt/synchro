@@ -4,6 +4,7 @@ namespace Tygh\Addons\Synchro\Repository;
 
 use UnexpectedValueException;
 use Throwable;
+use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\RepresentEntityDto;
 use Tygh\Database\Connection;
 
@@ -926,6 +927,24 @@ class ImportEntityRepository
     }
 
     /**
+     * Counts staged DTOs of the requested type.
+     *
+     * @param int    $import_id   Import identifier
+     * @param string $entity_type Entity type
+     *
+     * @return int
+     */
+    public function countByEntityType($import_id, $entity_type)
+    {
+        return (int) $this->database->getField(
+            'SELECT COUNT(*) FROM ?:?p WHERE import_id = ?i AND entity_type = ?s',
+            self::TABLE_NAME,
+            $import_id,
+            $entity_type
+        );
+    }
+
+    /**
      * Finds DTOs from several import runs.
      *
      * @param array<int> $import_ids  Import identifiers in precedence order
@@ -1011,6 +1030,64 @@ class ImportEntityRepository
     }
 
     /**
+     * Finds a parent-first category batch after the persisted application checkpoint.
+     *
+     * @param int $import_id                  Import identifier
+     * @param int $after_application_position Last applied category position
+     * @param int $limit                      Batch size
+     *
+     * @return array<int, \Tygh\Addons\Synchro\Dto\CategoryDto> Categories keyed by application position
+     */
+    public function findCategoryApplicationBatch($import_id, $after_application_position, $limit)
+    {
+        if (!$import_id || $limit < 1) {
+            return [];
+        }
+
+        $rows = $this->database->getArray(
+            'SELECT application_position, entity FROM ?:?p'
+            . ' WHERE import_id = ?i AND entity_type = ?s AND application_position > ?i'
+            . ' ORDER BY application_position LIMIT ?i',
+            self::TABLE_NAME,
+            $import_id,
+            CategoryDto::ENTITY_TYPE,
+            $after_application_position,
+            $limit
+        );
+        $categories = [];
+
+        foreach ($rows as $row) {
+            /** @var \Tygh\Addons\Synchro\Dto\CategoryDto $category */
+            $category = unserialize($row['entity']);
+            if (!$category instanceof CategoryDto) {
+                throw new UnexpectedValueException('The stored entity is not a category');
+            }
+            $categories[(int) $row['application_position']] = $category;
+        }
+
+        return $categories;
+    }
+
+    /**
+     * Stores the last fully applied category position.
+     *
+     * @param int $import_id          Import identifier
+     * @param int $application_cursor Last applied category position
+     *
+     * @return bool
+     */
+    public function updateApplicationCursor($import_id, $application_cursor)
+    {
+        return $this->database->query(
+            'UPDATE ?:?p SET application_cursor = ?i, updated_at = ?i WHERE import_id = ?i',
+            self::IMPORTS_TABLE_NAME,
+            $application_cursor,
+            TIME,
+            $import_id
+        ) !== false;
+    }
+
+    /**
      * Removes all staged entities of the specified import runs.
      *
      * @param array<int> $import_ids Import identifiers
@@ -1029,7 +1106,7 @@ class ImportEntityRepository
             $import_ids
         );
 
-        return is_int($result) ? $result : 0;
+        return (int) $result;
     }
 
     /**
@@ -1102,5 +1179,42 @@ class ImportEntityRepository
             true,
             ['entity', 'updated_at']
         );
+    }
+
+    /**
+     * Saves categories with the parent-first application order produced by the convertor.
+     *
+     * @param int                                                    $import_id  Import identifier
+     * @param int                                                    $company_id Company identifier
+     * @param array<array-key, \Tygh\Addons\Synchro\Dto\CategoryDto> $categories Category DTO instances
+     *
+     * @return int
+     */
+    public function batchSaveCategories($import_id, $company_id, array $categories)
+    {
+        $timestamp = time();
+        $records = [];
+
+        foreach ($categories as $application_position => $category) {
+            $records[] = [
+                'import_id'            => $import_id,
+                'company_id'           => $company_id,
+                'entity_id'            => $category->getEntityId(),
+                'entity_type'          => CategoryDto::ENTITY_TYPE,
+                'application_position' => $application_position + 1,
+                'entity'               => serialize($category),
+                'created_at'           => $timestamp,
+                'updated_at'           => $timestamp,
+            ];
+        }
+
+        return $records
+            ? $this->database->replaceInto(
+                self::TABLE_NAME,
+                $records,
+                true,
+                ['entity', 'application_position', 'updated_at']
+            )
+            : 0;
     }
 }

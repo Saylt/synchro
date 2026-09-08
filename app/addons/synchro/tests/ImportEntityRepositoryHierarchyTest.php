@@ -125,6 +125,21 @@ class ImportEntityRepositoryHierarchyTest extends ATestCase
         $this->assertTrue((new ImportEntityRepository($database))->claimChild(55));
     }
 
+    public function testRemovesStagedEntitiesWithStringAffectedRows()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'DELETE FROM ?:?p WHERE import_id IN (?n)',
+                ImportEntityRepository::TABLE_NAME,
+                [41, 43]
+            )
+            ->willReturn('2');
+
+        $this->assertSame(2, (new ImportEntityRepository($database))->removeByImportIds([41, 43]));
+    }
+
     public function testFindsCompletedChildrenInPageOrder()
     {
         $database = $this->createDatabase();
@@ -186,6 +201,79 @@ class ImportEntityRepositoryHierarchyTest extends ATestCase
 
         $this->expectException(\UnexpectedValueException::class);
         (new ImportEntityRepository($database))->findEntityBatch([41], ProductDto::ENTITY_TYPE, '', 100);
+    }
+
+    public function testFindsCategoryBatchByPersistedApplicationPosition()
+    {
+        $first_category = new CategoryDto();
+        $first_category->id = 10;
+        $second_category = new CategoryDto();
+        $second_category->id = 20;
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getArray')
+            ->with(
+                'SELECT application_position, entity FROM ?:?p'
+                . ' WHERE import_id = ?i AND entity_type = ?s AND application_position > ?i'
+                . ' ORDER BY application_position LIMIT ?i',
+                ImportEntityRepository::TABLE_NAME,
+                41,
+                CategoryDto::ENTITY_TYPE,
+                100,
+                100
+            )
+            ->willReturn([
+                ['application_position' => '101', 'entity' => serialize($first_category)],
+                ['application_position' => '102', 'entity' => serialize($second_category)],
+            ]);
+
+        $batch = (new ImportEntityRepository($database))->findCategoryApplicationBatch(41, 100, 100);
+
+        $this->assertSame([101, 102], array_keys($batch));
+        $this->assertSame(10, $batch[101]->id);
+        $this->assertSame(20, $batch[102]->id);
+    }
+
+    public function testStoresCategoryApplicationCheckpoint()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('query')
+            ->with(
+                'UPDATE ?:?p SET application_cursor = ?i, updated_at = ?i WHERE import_id = ?i',
+                ImportEntityRepository::IMPORTS_TABLE_NAME,
+                200,
+                TIME,
+                41
+            )
+            ->willReturn('1');
+
+        $this->assertTrue((new ImportEntityRepository($database))->updateApplicationCursor(41, 200));
+    }
+
+    public function testPersistsCategoryApplicationOrder()
+    {
+        $parent = new CategoryDto();
+        $parent->id = 10;
+        $child = new CategoryDto();
+        $child->id = 20;
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('replaceInto')
+            ->with(
+                ImportEntityRepository::TABLE_NAME,
+                $this->callback(static function (array $records) {
+                    return $records[0]['entity_id'] === '10'
+                        && $records[0]['application_position'] === 1
+                        && $records[1]['entity_id'] === '20'
+                        && $records[1]['application_position'] === 2;
+                }),
+                true,
+                ['entity', 'application_position', 'updated_at']
+            )
+            ->willReturn(2);
+
+        $this->assertSame(
+            2,
+            (new ImportEntityRepository($database))->batchSaveCategories(41, 1, [$parent, $child])
+        );
     }
 
     /**
