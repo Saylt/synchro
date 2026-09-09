@@ -28,6 +28,42 @@ msgctxt "Languages::synchro.month_days"
 msgid "Month days"
 msgstr "Month days"
 
+msgctxt "Languages::synchro.repeat_on"
+msgid "Repeat on"
+msgstr "Repeat on"
+
+msgctxt "Languages::synchro.every_day"
+msgid "Every day"
+msgstr "Every day"
+
+msgctxt "Languages::synchro.run_time"
+msgid "Run time"
+msgstr "Run time"
+
+msgctxt "Languages::synchro.once_at"
+msgid "Once at"
+msgstr "Once at"
+
+msgctxt "Languages::synchro.repeat_in_period"
+msgid "Repeat in a time window"
+msgstr "Repeat in a time window"
+
+msgctxt "Languages::synchro.start_time"
+msgid "Start time"
+msgstr "Start time"
+
+msgctxt "Languages::synchro.end_time"
+msgid "End time"
+msgstr "End time"
+
+msgctxt "Languages::synchro.repeat_interval"
+msgid "Repeat interval"
+msgstr "Repeat interval"
+
+msgctxt "Languages::synchro.time_window"
+msgid "Time window"
+msgstr "Time window"
+
 msgctxt "Languages::synchro.task_time"
 msgid "Task time"
 msgstr "Task time"
@@ -87,6 +123,10 @@ msgstr "The script is already running"
 msgctxt "Languages::synchro.script_already_exists"
 msgid "A task for this controller and mode already exists"
 msgstr "A task for this controller and mode already exists"
+
+msgctxt "Languages::synchro.script_cannot_be_saved"
+msgid "The task cannot be saved. Check its settings."
+msgstr "The task cannot be saved. Check its settings."
 
 msgctxt "Languages::synchro.script_is_running_more_than_one_day"
 msgid "The script is running more than one day."

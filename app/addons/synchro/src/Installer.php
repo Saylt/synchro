@@ -52,7 +52,7 @@ class Installer implements InstallerInterface
      */
     public function onUninstall()
     {
-        db_query('DROP TABLE IF EXISTS ?:cron_scripts');
+        db_query('DROP TABLE IF EXISTS ?:synchro_cron_scripts');
         db_query('DROP TABLE IF EXISTS ?:synchro_product_feature_mappings');
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entity_map');
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entities');
@@ -97,7 +97,7 @@ class Installer implements InstallerInterface
     protected function createCronScriptsTable()
     {
         $query = <<<'SQL'
-CREATE TABLE IF NOT EXISTS ?:cron_scripts (
+CREATE TABLE IF NOT EXISTS ?:synchro_cron_scripts (
     script_id int(11) unsigned NOT NULL AUTO_INCREMENT,
     script varchar(255) NOT NULL DEFAULT '',
     description text NOT NULL DEFAULT '',
@@ -126,14 +126,14 @@ CREATE TABLE IF NOT EXISTS ?:cron_scripts (
     period_week_days set(
         'monday', 'tuesday', 'wednesday', 'thursday',
         'friday', 'saturday', 'sunday'
-    ) NOT NULL,
+    ),
     period_hours_begin enum(
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
         '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23'
     ) NOT NULL DEFAULT '0',
     period_hours_end enum(
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',
-        '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23'
+        '12', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24'
     ) NOT NULL DEFAULT '0',
     refresh_hours enum(
         '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11',

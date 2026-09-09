@@ -19,7 +19,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             : [];
         /** @var array<string, array<array-key, string>|int|string|null> $script_data */
         if (!$cron_manager->updateScriptData($script_data, $request_script_id)) {
-            fn_set_notification('E', __('error'), __('synchro.script_already_exists'));
+            fn_set_notification('E', __('error'), __('synchro.script_cannot_be_saved'));
         }
     }
 
@@ -164,12 +164,11 @@ if ($mode === 'manage') {
         'sort_by'      => 'created',
     ]);
     list($periodic_scripts) = $cron_manager->getCronScripts([
-        'status'              => 'A',
-        'run_mode'            => 'periodic',
-        'period_by_timestamp' => TIME,
-        'skip_view'           => true,
-        'sort_order'          => 'asc',
-        'sort_by'             => 'last_launch',
+        'status'     => 'A',
+        'run_mode'   => 'periodic',
+        'skip_view'  => true,
+        'sort_order' => 'asc',
+        'sort_by'    => 'last_launch',
     ]);
     $scripts = $once_scripts + $periodic_scripts;
 
@@ -191,7 +190,7 @@ if ($mode === 'manage') {
 
         if (
             $script['run_mode'] === 'periodic'
-            && !$cron_manager->checkCronRefreshTime($script, TIME)
+            && !$cron_manager->isCronScriptDue($script, TIME)
         ) {
             continue;
         }

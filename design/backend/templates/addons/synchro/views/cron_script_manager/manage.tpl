@@ -19,9 +19,7 @@
 		<a class="{$ajax_class}{if $search.sort_by == "script"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=script&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("script")}</a></th>
 	<th>{__("synchro.run_mode")}</th>
 	<th>
-		<a class="{$ajax_class}{if $search.sort_by == "month_days"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=month_days&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("synchro.month_days")}</a></th>
-	<th>
-		<a class="{$ajax_class}{if $search.sort_by == "week_days"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=week_days&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("synchro.week_days")}</a></th>
+		{__("synchro.repeat_on")}</th>
 	<th>
 		<a class="{$ajax_class}{if $search.sort_by == "rate"} sort-link-{$search.sort_order}{/if}" href="{"`$c_url`&amp;sort_by=rate&amp;sort_order=`$search.sort_order`"|fn_url}" rev="pagination_contents">{__("synchro.execution_rate")}</a></th>
 	<th>
@@ -42,26 +40,31 @@
 	</td>
 	<td>{__("synchro.{$s.run_mode}")}</td>
 	<td>
-		<div>{if $s.run_mode === "periodic"}{","|implode:$s.period_month_days|default:__("all")}{else}—{/if}</div>
-	</td>
-	<td>
-		<div>{if $s.run_mode === "periodic"}{$synchro_cron_manager->showShortWeekdays($s.period_week_days)}{else}—{/if}</div>
+		<div>
+			{if $s.run_mode !== "periodic"}—
+			{elseif $s.period_month_days}{__("synchro.month_days")}: {","|implode:$s.period_month_days}
+			{elseif $s.period_week_days}{__("synchro.week_days")}: {$synchro_cron_manager->showShortWeekdays($s.period_week_days)}
+			{else}{__("synchro.every_day")}
+			{/if}
+		</div>
 	</td>
 	<td>
 		<div>
 			{if $s.run_mode === "once"}
 				{__("synchro.once")}
 			{else}
-				{$s.period_hours_begin}:00 {if $s.period_hours_begin != $s.period_hours_end}&ndash; {$s.period_hours_end}:00{/if}
-				<br />
 				{if $s.refresh_hours || $s.refresh_minutes}
+					{$s.period_hours_begin}:00 &ndash; {$s.period_hours_end}:00
+					<br />
 					{__("synchro.each")}
 					{if $s.refresh_hours}
 						{$s.refresh_hours} {__("hours")}
 					{/if}
 					{if $s.refresh_minutes}
-						{$s.refresh_minutes} {__("minutes")}
+					{$s.refresh_minutes} {__("minutes")}
 					{/if}
+				{else}
+					{__("synchro.once_at")} {$s.period_hours_begin}:00
 				{/if}
 			{/if}
 		</div>
@@ -78,7 +81,7 @@
 	</td>
 	<td>{$s.progress_status|default:"—"}</td>
 	<td>
-		{include file="common/select_popup.tpl" id=$s.script_id status=$s.status object_id_name="script_id" table="cron_scripts"}
+		{include file="common/select_popup.tpl" id=$s.script_id status=$s.status object_id_name="script_id" table="synchro_cron_scripts"}
 	</td>
 	<td class="nowrap">
 		{capture name="tools_items"}
@@ -99,7 +102,7 @@
 	{$import_process_group = $synchro_import_processes[$s.script_id]}
 	<tr class="no-border">
 		<td></td>
-		<td colspan="9">
+		<td colspan="8">
 			<div class="well well-small">
 				<div>
 					<strong>{__("synchro.import_processes")}</strong>
@@ -155,7 +158,7 @@
 {/if}
 {foreachelse}
 <tr class="no-items">
-	<td colspan="10"><p>{__("no_data")}</p></td>
+<td colspan="9"><p>{__("no_data")}</p></td>
 </tr>
 {/foreach}
 </table>

@@ -44,7 +44,7 @@
                 <label for="elm_inner_status">{__("synchro.inner_status")}</label>
                 <select name="inner_status" id="elm_inner_status">
                     <option value="">--</option>
-                    {foreach from=$synchro_cron_manager->getSetElements("inner_status", "cron_scripts") item="inner_status"}
+                    {foreach from=$synchro_cron_manager->getSetElements("inner_status") item="inner_status"}
                         <option value="{$inner_status}"{if $search.inner_status == $inner_status} selected="selected"{/if}>{__("synchro.{$inner_status}")}</option>
                     {/foreach}
                 </select>
@@ -81,7 +81,7 @@
                     <div class="controls checkbox-list">
                         {html_checkboxes
                             name="period_week_days"
-                            options=$synchro_cron_manager->getSetElements("period_week_days", "cron_scripts", true)
+                            options=$synchro_cron_manager->getSetElements("period_week_days", true)
                             selected=$search.period_week_days
                             columns=4
                         }
@@ -91,18 +91,18 @@
 
             <div class="group form-horizontal">
                 <div class="control-group">
-                    <label for="elm_period_hours_begin" class="control-label">{__("synchro.task_time")}</label>
+                    <label for="elm_period_hours_begin" class="control-label">{__("synchro.time_window")}</label>
                     <div class="controls nowrap">
                         <select name="period_hours_begin" id="elm_period_hours_begin" class="input-mini">
                             <option value="">--</option>
-                            {foreach from=$synchro_cron_manager->getSetElements("period_hours_begin", "cron_scripts") item="m"}
+                            {foreach from=$synchro_cron_manager->getSetElements("period_hours_begin") item="m"}
                                 <option value="{$m}"{if $search.period_hours_begin == $m} selected="selected"{/if}>{$m}</option>
                             {/foreach}
                         </select>
                         <span class="muted">:00&nbsp;&ndash;&nbsp;</span>
                         <select name="period_hours_end" id="elm_period_hours_end" class="input-mini">
                             <option value="">--</option>
-                            {foreach from=$synchro_cron_manager->getSetElements("period_hours_end", "cron_scripts") item="m"}
+                            {foreach from=$synchro_cron_manager->getSetElements("period_hours_end") item="m"}
                                 <option value="{$m}"{if $search.period_hours_end == $m} selected="selected"{/if}>{$m}</option>
                             {/foreach}
                         </select>
@@ -111,18 +111,18 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="elm_refresh_hours" class="control-label">{__("synchro.refresh_time")}</label>
+                    <label for="elm_refresh_hours" class="control-label">{__("synchro.repeat_interval")}</label>
                     <div class="controls nowrap">
                         <select name="refresh_hours" id="elm_refresh_hours" class="input-mini">
                             <option value="">--</option>
-                            {foreach from=$synchro_cron_manager->getSetElements("refresh_hours", "cron_scripts") item="m"}
+                            {foreach from=$synchro_cron_manager->getSetElements("refresh_hours") item="m"}
                                 <option value="{$m}"{if $search.refresh_hours == $m} selected="selected"{/if}>{$m}</option>
                             {/foreach}
                         </select>
                         <span class="muted">{__("synchro.hours")}</span>
                         <select name="refresh_minutes" id="elm_refresh_minutes" class="input-mini">
                             <option value="">--</option>
-                            {foreach from=$synchro_cron_manager->getSetElements("refresh_minutes", "cron_scripts") item="m"}
+                            {foreach from=$synchro_cron_manager->getSetElements("refresh_minutes") item="m"}
                                 <option value="{$m}"{if $search.refresh_minutes == $m} selected="selected"{/if}>{$m}</option>
                             {/foreach}
                         </select>

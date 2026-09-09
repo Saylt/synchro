@@ -18,6 +18,7 @@ namespace Tygh\Addons\Synchro\Tests\Unit;
 
 defined('TIME') or define('TIME', time());
 defined('SECONDS_IN_DAY') or define('SECONDS_IN_DAY', 86400);
+defined('DESCR_SL') or define('DESCR_SL', 'en');
 
 use Tygh\Addons\Synchro\CronManager;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
@@ -50,6 +51,24 @@ class CronManagerTest extends ATestCase
         $this->assertFalse($result);
     }
 
+    public function testGetsSetElementsFromCronScriptsTable()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('getRow')
+            ->with(
+                'SHOW COLUMNS FROM ?:?p WHERE Field = ?s',
+                CronManager::TABLE_NAME,
+                'inner_status'
+            )
+            ->willReturn(['Type' => "enum('scheduled','completed')"]);
+
+        $this->assertSame([
+            'scheduled' => 'synchro.scheduled[]',
+            'completed' => 'synchro.completed[]',
+        ], $this->createManager($database)->getSetElements('inner_status', true));
+    }
+
     public function testTestProductImportSettingsAreNormalized()
     {
         $database = $this->createDatabase();
@@ -59,10 +78,14 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'INSERT INTO ?:cron_scripts ?e',
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
                 [
                     'script'                 => 'synchro_import.products',
-                    'period_week_days'       => 'monday',
+                    'period_hours_begin'     => '0',
+                    'period_hours_end'       => '0',
+                    'refresh_hours'          => '0',
+                    'refresh_minutes'        => '0',
                     'run_mode'               => 'once',
                     'use_portions'            => 'N',
                     'pages_per_portion'       => 1,
@@ -97,7 +120,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())->method('getField')->willReturn(false);
         $database->expects($this->once())->method('query')
             ->with(
-                'INSERT INTO ?:cron_scripts ?e',
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
                 $this->callback(static function (array $script_data) {
                     return $script_data['script'] === 'synchro_import.categories'
                         && $script_data['post_process'] === CronManager::POST_PROCESS_APPLY_CATEGORIES;
@@ -131,7 +155,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())->method('getField')->willReturn(false);
         $database->expects($this->once())->method('query')
             ->with(
-                'INSERT INTO ?:cron_scripts ?e',
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
                 $this->callback(static function (array $script_data) {
                     return $script_data['post_process'] === '';
                 })
@@ -170,7 +195,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())->method('getField')->willReturn(false);
         $database->expects($this->once())->method('query')
             ->with(
-                'INSERT INTO ?:cron_scripts ?e',
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
                 $this->callback(static function (array $script_data) {
                     return $script_data['post_process'] === '';
                 })
@@ -219,8 +245,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->exactly(2))
             ->method('getRow')
             ->withConsecutive(
-                ['SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i', 15],
-                ['SELECT * FROM ?:cron_scripts WHERE script = ?s LIMIT 1', 'synchro_import.apply_products']
+                ['SELECT post_process FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15],
+                ['SELECT * FROM ?:?p WHERE script = ?s LIMIT 1', CronManager::TABLE_NAME, 'synchro_import.apply_products']
             )
             ->willReturnOnConsecutiveCalls(
                 ['post_process' => 'synchro_import.apply_products'],
@@ -229,7 +255,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                CronManager::TABLE_NAME,
                 [
                     'status'            => 'A',
                     'run_mode'          => 'once',
@@ -260,8 +287,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->exactly(2))
             ->method('getRow')
             ->withConsecutive(
-                ['SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i', 15],
-                ['SELECT * FROM ?:cron_scripts WHERE script = ?s LIMIT 1', 'synchro_import.apply_products']
+                ['SELECT post_process FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15],
+                ['SELECT * FROM ?:?p WHERE script = ?s LIMIT 1', CronManager::TABLE_NAME, 'synchro_import.apply_products']
             )
             ->willReturnOnConsecutiveCalls(
                 ['post_process' => 'synchro_import.apply_products'],
@@ -270,7 +297,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'INSERT INTO ?:cron_scripts ?e',
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
                 [
                     'status'            => 'A',
                     'run_mode'          => 'once',
@@ -278,7 +306,6 @@ class CronManagerTest extends ATestCase
                     'runtime_import_id' => 10,
                     'last_launch'       => TIME,
                     'script'            => 'synchro_import.apply_products',
-                    'period_week_days'  => 'monday,tuesday,wednesday,thursday,friday,saturday,sunday',
                     'created'           => TIME,
                 ]
             )
@@ -300,7 +327,7 @@ class CronManagerTest extends ATestCase
         $database = $this->createDatabase();
         $database->expects($this->once())
             ->method('getRow')
-            ->with('SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i', 15)
+            ->with('SELECT post_process FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15)
             ->willReturn(['post_process' => 'synchro_import.apply_products']);
         $logged_error = '';
         $GLOBALS['synchro_cron_log_event'] = static function ($type, $action, array $data) use (&$logged_error) {
@@ -317,7 +344,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET progress_status = ?s WHERE script_id = ?i',
+                'UPDATE ?:?p SET progress_status = ?s WHERE script_id = ?i',
+                CronManager::TABLE_NAME,
                 'Page 4 of 10',
                 15
             )
@@ -326,6 +354,253 @@ class CronManagerTest extends ATestCase
 
         $this->assertTrue(is_callable([$manager, 'updateProgressStatus']));
         $this->assertSame(1, $manager->updateProgressStatus(15, 'Page 4 of 10'));
+    }
+
+    public function testDailyScheduleIsDueAtConfiguredTime()
+    {
+        $manager = $this->createManager($this->createDatabase());
+        $timestamp = mktime(8, 0, 0, 9, 14, 2026);
+
+        $this->assertTrue($manager->isCronScriptDue($this->createPeriodicScript(), $timestamp));
+        $this->assertFalse($manager->isCronScriptDue($this->createPeriodicScript(), $timestamp + 60));
+    }
+
+    public function testWeeklyScheduleRunsOnlyOnSelectedWeekdays()
+    {
+        $manager = $this->createManager($this->createDatabase());
+        $script = $this->createPeriodicScript([
+            'period_week_days' => ['monday'],
+        ]);
+
+        $this->assertTrue($manager->isCronScriptDue($script, mktime(8, 0, 0, 9, 14, 2026)));
+        $this->assertFalse($manager->isCronScriptDue($script, mktime(8, 0, 0, 9, 15, 2026)));
+    }
+
+    public function testMonthlyScheduleRunsOnlyOnSelectedMonthDays()
+    {
+        $manager = $this->createManager($this->createDatabase());
+        $script = $this->createPeriodicScript([
+            'period_month_days' => ['15'],
+        ]);
+
+        $this->assertTrue($manager->isCronScriptDue($script, mktime(8, 0, 0, 9, 15, 2026)));
+        $this->assertFalse($manager->isCronScriptDue($script, mktime(8, 0, 0, 9, 16, 2026)));
+    }
+
+    public function testIntervalScheduleRunsOnlyAtIntervalWithinWindow()
+    {
+        $manager = $this->createManager($this->createDatabase());
+        $script = $this->createPeriodicScript([
+            'period_hours_end' => '18',
+            'refresh_hours'    => '3',
+            'refresh_minutes'  => '15',
+        ]);
+
+        $this->assertTrue($manager->isCronScriptDue($script, mktime(11, 15, 0, 9, 14, 2026)));
+        $this->assertFalse($manager->isCronScriptDue($script, mktime(11, 16, 0, 9, 14, 2026)));
+        $this->assertFalse($manager->isCronScriptDue($script, mktime(18, 0, 0, 9, 14, 2026)));
+    }
+
+    public function testScheduleIsNotDueAgainWithinMinimumLaunchInterval()
+    {
+        $manager = $this->createManager($this->createDatabase());
+        $timestamp = mktime(8, 0, 0, 9, 14, 2026);
+        $script = $this->createPeriodicScript([
+            'last_launch' => $timestamp - 59,
+        ]);
+
+        $this->assertFalse($manager->isCronScriptDue($script, $timestamp));
+    }
+
+    public function testPeriodicMonthScheduleIsNormalizedBeforeInsert()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
+                [
+                    'script'             => 'synchro_import.categories',
+                    'period_month_days'  => '1,15',
+                    'period_hours_begin' => '8',
+                    'period_hours_end'   => '18',
+                    'refresh_hours'      => '3',
+                    'refresh_minutes'    => '15',
+                    'run_mode'           => 'periodic',
+                    'post_process'       => '',
+                    'created'            => TIME,
+                ]
+            )
+            ->willReturn(15);
+
+        $manager = $this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            ['synchro_import.categories' => ['name' => 'synchro.import_categories']]
+        );
+        $result = $manager->updateScriptData([
+            'script'             => 'synchro_import.categories',
+            'run_mode'           => 'periodic',
+            'period_day_mode'    => 'month_days',
+            'period_month_days'  => ['1', '15'],
+            'period_week_days'   => ['monday'],
+            'period_time_mode'   => 'interval',
+            'period_hours_begin' => '8',
+            'period_hours_end'   => '18',
+            'refresh_hours'      => '3',
+            'refresh_minutes'    => '15',
+        ]);
+
+        $this->assertSame(15, $result);
+    }
+
+    public function testPeriodicDailyScheduleIsNormalizedBeforeInsert()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
+                [
+                    'script'             => 'synchro_import.categories',
+                    'period_hours_begin' => '8',
+                    'period_hours_end'   => '8',
+                    'refresh_hours'      => '0',
+                    'refresh_minutes'    => '0',
+                    'run_mode'           => 'periodic',
+                    'post_process'       => '',
+                    'created'            => TIME,
+                ]
+            )
+            ->willReturn(15);
+
+        $manager = $this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            ['synchro_import.categories' => ['name' => 'synchro.import_categories']]
+        );
+        $result = $manager->updateScriptData([
+            'script'             => 'synchro_import.categories',
+            'run_mode'           => 'periodic',
+            'period_day_mode'    => 'daily',
+            'period_month_days'  => ['1'],
+            'period_week_days'   => ['monday'],
+            'period_time_mode'   => 'once',
+            'period_hours_begin' => '8',
+            'period_hours_end'   => '18',
+            'refresh_hours'      => '3',
+            'refresh_minutes'    => '15',
+        ]);
+
+        $this->assertSame(15, $result);
+    }
+
+    public function testPeriodicWeeklyScheduleRetainsDaysForOneTimeRun()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
+                [
+                    'script'             => 'synchro_import.categories',
+                    'period_week_days'   => 'monday',
+                    'period_hours_begin' => '8',
+                    'period_hours_end'   => '8',
+                    'refresh_hours'      => '0',
+                    'refresh_minutes'    => '0',
+                    'run_mode'           => 'periodic',
+                    'post_process'       => '',
+                    'created'            => TIME,
+                ]
+            )
+            ->willReturn(15);
+
+        $manager = $this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            ['synchro_import.categories' => ['name' => 'synchro.import_categories']]
+        );
+        $result = $manager->updateScriptData([
+            'script'             => 'synchro_import.categories',
+            'run_mode'           => 'periodic',
+            'period_day_mode'    => 'week_days',
+            'period_week_days'   => ['monday'],
+            'period_time_mode'   => 'once',
+            'period_hours_begin' => '8',
+            'period_hours_end'   => '18',
+            'refresh_hours'      => '3',
+            'refresh_minutes'    => '15',
+        ]);
+
+        $this->assertSame(15, $result);
+    }
+
+    /**
+     * @dataProvider invalidPeriodicScheduleProvider
+     *
+     * @param array<string, array<int, string>|int|string> $schedule_data Invalid schedule data
+     *
+     * @return void
+     */
+    public function testInvalidPeriodicScheduleCannotBeSaved(array $schedule_data)
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->never())->method('query');
+
+        $this->assertFalse($this->createManager($database)->updateScriptData(array_merge([
+            'script'             => 'synchro_import.products',
+            'run_mode'           => 'periodic',
+            'period_day_mode'    => 'daily',
+            'period_month_days'  => [],
+            'period_week_days'   => [],
+            'period_time_mode'   => 'once',
+            'period_hours_begin' => '8',
+            'period_hours_end'   => '8',
+            'refresh_hours'      => '0',
+            'refresh_minutes'    => '0',
+        ], $schedule_data)));
+    }
+
+    /**
+     * @return array<string, array{array<string, array<int, string>|int|string>}>
+     */
+    public function invalidPeriodicScheduleProvider()
+    {
+        return [
+            'weekdays without a day' => [[
+                'period_day_mode'  => 'week_days',
+                'period_week_days' => [],
+            ]],
+            'month days without a day' => [[
+                'period_day_mode'   => 'month_days',
+                'period_month_days' => [],
+            ]],
+            'zero repeat interval' => [[
+                'period_time_mode' => 'interval',
+                'period_hours_end' => '18',
+            ]],
+            'interval ends at start' => [[
+                'period_time_mode' => 'interval',
+                'period_hours_end' => '8',
+                'refresh_minutes'  => '1',
+            ]],
+            'interval crosses midnight' => [[
+                'period_time_mode' => 'interval',
+                'period_hours_end' => '7',
+                'refresh_minutes'  => '1',
+            ]],
+        ];
     }
 
     public function testBackgroundCommandUsesDedicatedRunner()
@@ -346,7 +621,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                CronManager::TABLE_NAME,
                 [
                     'inner_status' => 'queued',
                     'last_launch'  => TIME,
@@ -372,7 +648,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                CronManager::TABLE_NAME,
                 [
                     'inner_status' => 'queued',
                     'last_launch'  => TIME,
@@ -399,8 +676,9 @@ class CronManagerTest extends ATestCase
             ->method('query')
             ->withConsecutive(
                 [
-                    'UPDATE ?:cron_scripts SET inner_status = IF(run_mode = ?s, ?s, ?s)'
+                    'UPDATE ?:?p SET inner_status = IF(run_mode = ?s, ?s, ?s)'
                     . ' WHERE script_id = ?i AND script IN (?a) AND inner_status = ?s',
+                    CronManager::TABLE_NAME,
                     'once',
                     'cancelled',
                     'scheduled',
@@ -409,8 +687,9 @@ class CronManagerTest extends ATestCase
                     'queued',
                 ],
                 [
-                    'UPDATE ?:cron_scripts SET inner_status = ?s'
+                    'UPDATE ?:?p SET inner_status = ?s'
                     . ' WHERE script_id = ?i AND script IN (?a) AND inner_status IN (?a)',
+                    CronManager::TABLE_NAME,
                     'stopping',
                     15,
                     ['synchro_import.products'],
@@ -430,8 +709,9 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET inner_status = ?s'
+                'UPDATE ?:?p SET inner_status = ?s'
                 . ' WHERE script_id = ?i AND inner_status = ?s',
+                CronManager::TABLE_NAME,
                 'waiting_children',
                 15,
                 'in_progress'
@@ -447,8 +727,9 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET inner_status = ?s'
+                'UPDATE ?:?p SET inner_status = ?s'
                 . ' WHERE script_id = ?i AND inner_status IN (?a)',
+                CronManager::TABLE_NAME,
                 'waiting_children',
                 15,
                 ['scheduled', 'completed', 'partial_success', 'failed', 'cancelled']
@@ -478,7 +759,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('getRow')
             ->with(
-                'SELECT run_mode, inner_status FROM ?:cron_scripts WHERE script_id = ?i',
+                'SELECT run_mode, inner_status FROM ?:?p WHERE script_id = ?i',
+                CronManager::TABLE_NAME,
                 15
             )
             ->willReturn([
@@ -488,7 +770,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+                CronManager::TABLE_NAME,
                 'partial_success',
                 15,
                 ['waiting_children', 'stopping']
@@ -510,7 +793,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+                CronManager::TABLE_NAME,
                 'scheduled',
                 15,
                 ['waiting_children', 'stopping']
@@ -526,8 +810,9 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET inner_status = IF(run_mode = ?s, ?s, ?s)'
+                'UPDATE ?:?p SET inner_status = IF(run_mode = ?s, ?s, ?s)'
                 . ' WHERE script_id = ?i AND script IN (?a) AND inner_status = ?s',
+                CronManager::TABLE_NAME,
                 'once',
                 'cancelled',
                 'scheduled',
@@ -547,7 +832,7 @@ class CronManagerTest extends ATestCase
         $database = $this->createDatabase();
         $database->expects($this->once())
             ->method('getField')
-            ->with('SELECT inner_status FROM ?:cron_scripts WHERE script_id = ?i', 15)
+            ->with('SELECT inner_status FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15)
             ->willReturn('stopping');
         $manager = $this->createManager($database);
 
@@ -562,7 +847,8 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
+                'UPDATE ?:?p SET ?u WHERE script_id = ?i',
+                CronManager::TABLE_NAME,
                 ['inner_status' => 'cancelled'],
                 15
             )
@@ -588,7 +874,8 @@ class CronManagerTest extends ATestCase
             ->method('query')
             ->withConsecutive(
                 [
-                    'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status = ?s',
+                    'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status = ?s',
+                    CronManager::TABLE_NAME,
                     [
                         'inner_status'    => 'in_progress',
                         'progress_status' => null,
@@ -597,8 +884,9 @@ class CronManagerTest extends ATestCase
                     'queued',
                 ],
                 [
-                    'UPDATE ?:cron_scripts SET inner_status = IF(inner_status = ?s, ?s, ?s)'
+                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s)'
                     . ' WHERE script_id = ?i AND inner_status IN (?a)',
+                    CronManager::TABLE_NAME,
                     'stopping',
                     'cancelled',
                     'completed',
@@ -641,7 +929,8 @@ class CronManagerTest extends ATestCase
             ->method('query')
             ->withConsecutive(
                 [
-                    'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status = ?s',
+                    'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status = ?s',
+                    CronManager::TABLE_NAME,
                     [
                         'inner_status'    => 'in_progress',
                         'progress_status' => null,
@@ -650,8 +939,9 @@ class CronManagerTest extends ATestCase
                     'queued',
                 ],
                 [
-                    'UPDATE ?:cron_scripts SET inner_status = IF(inner_status = ?s, ?s, ?s)'
+                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s)'
                     . ' WHERE script_id = ?i AND inner_status IN (?a)',
+                    CronManager::TABLE_NAME,
                     'stopping',
                     'cancelled',
                     'failed',
@@ -693,6 +983,24 @@ class CronManagerTest extends ATestCase
             ->disableOriginalConstructor()
             ->setMethods(['getField', 'getRow', 'query'])
             ->getMock();
+    }
+
+    /**
+     * @param array<string, array<int, string>|int|string> $data Schedule fields
+     *
+     * @return array<string, array<int, string>|int|string>
+     */
+    private function createPeriodicScript(array $data = [])
+    {
+        return array_merge([
+            'last_launch'        => 0,
+            'period_month_days'  => [],
+            'period_week_days'   => [],
+            'period_hours_begin' => '8',
+            'period_hours_end'   => '8',
+            'refresh_hours'      => '0',
+            'refresh_minutes'    => '0',
+        ], $data);
     }
 
     /**

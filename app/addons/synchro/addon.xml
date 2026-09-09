@@ -6,7 +6,9 @@
     <position>0</position>
     <default_language>en</default_language>
     <status>active</status>
-
+    <compatibility>
+        <dependencies>warehouses</dependencies>
+    </compatibility>
     <autoload>
         <psr4 prefix="Tygh\Addons\Synchro\">src</psr4>
     </autoload>

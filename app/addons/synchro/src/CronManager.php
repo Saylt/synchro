@@ -13,6 +13,8 @@ use Tygh\Navigation\LastView;
  */
 class CronManager
 {
+    const TABLE_NAME = 'synchro_cron_scripts';
+
     const RUN_MODE_PERIODIC = 'periodic';
 
     const RUN_MODE_ONCE = 'once';
@@ -251,38 +253,6 @@ class CronManager
             );
         }
 
-        if (!empty($params['period_by_timestamp'])) {
-            $time_vars = $this->getTimeVars($params['period_by_timestamp']);
-            $condition .= $this->database->quote(
-                ' AND (s.period_month_days IS NULL OR FIND_IN_SET(?s, s.period_month_days))',
-                $time_vars['month_day']
-            );
-            $condition .= $this->database->quote(
-                ' AND FIND_IN_SET(?s, s.period_week_days)',
-                $time_vars['week_day']
-            );
-            $period_conditions = [
-                's.period_hours_begin = s.period_hours_end',
-                $this->database->quote(
-                    's.period_hours_begin < s.period_hours_end'
-                    . ' AND ?s >= s.period_hours_begin AND ?s < s.period_hours_end',
-                    $time_vars['hours'],
-                    $time_vars['hours']
-                ),
-                $this->database->quote(
-                    's.period_hours_begin > s.period_hours_end'
-                    . ' AND (?s >= s.period_hours_begin OR ?s < s.period_hours_end)',
-                    $time_vars['hours'],
-                    $time_vars['hours']
-                ),
-            ];
-            $condition .= ' AND ((' . implode(') OR (', $period_conditions) . '))';
-            $condition .= $this->database->quote(
-                ' AND s.last_launch <= ?i',
-                TIME - self::MIN_SECONDS_BETWEEN_RUNS
-            );
-        }
-
         if (
             empty($params['sort_order'])
             || !is_string($params['sort_order'])
@@ -309,19 +279,24 @@ class CronManager
         $limit = '';
         if (!empty($items_per_page)) {
             $total = $this->database->getField(
-                'SELECT COUNT(DISTINCT(s.script_id)) FROM ?:cron_scripts AS s WHERE 1 ' . $condition
+                'SELECT COUNT(DISTINCT(s.script_id)) FROM ?:?p AS s WHERE 1 ?p',
+                self::TABLE_NAME,
+                $condition
             );
             $limit = db_paginate($params['page'], $items_per_page, $total);
         }
         $items = $this->database->getHash(
-            'SELECT s.* FROM ?:cron_scripts AS s WHERE 1 ' . $condition
-            . ' ORDER BY ' . $sorting . ' ' . $limit,
-            'script_id'
+            'SELECT s.* FROM ?:?p AS s WHERE 1 ?p ORDER BY ?p ?p',
+            'script_id',
+            self::TABLE_NAME,
+            $condition,
+            $sorting,
+            $limit
         );
 
         foreach ($items as &$item) {
-            $item['period_week_days'] = explode(',', (string) $item['period_week_days']);
-            $item['period_month_days'] = explode(',', (string) $item['period_month_days']);
+            $item['period_week_days'] = $this->getCronScheduleValues($item, 'period_week_days');
+            $item['period_month_days'] = $this->getCronScheduleValues($item, 'period_month_days');
         }
         unset($item);
 
@@ -342,7 +317,8 @@ class CronManager
         }
 
         $script_data = $this->database->getRow(
-            'SELECT * FROM ?:cron_scripts WHERE script_id = ?i AND script IN (?a)',
+            'SELECT * FROM ?:?p WHERE script_id = ?i AND script IN (?a)',
+            self::TABLE_NAME,
             $script_id,
             array_keys($this->available_scripts)
         );
@@ -350,8 +326,8 @@ class CronManager
             return [];
         }
 
-        $script_data['period_week_days'] = explode(',', (string) $script_data['period_week_days']);
-        $script_data['period_month_days'] = explode(',', (string) $script_data['period_month_days']);
+        $script_data['period_week_days'] = $this->getCronScheduleValues($script_data, 'period_week_days');
+        $script_data['period_month_days'] = $this->getCronScheduleValues($script_data, 'period_month_days');
 
         return $script_data;
     }
@@ -370,7 +346,8 @@ class CronManager
         }
 
         return $this->database->query(
-            'DELETE FROM ?:cron_scripts WHERE script_id = ?i AND script IN (?a)',
+            'DELETE FROM ?:?p WHERE script_id = ?i AND script IN (?a)',
+            self::TABLE_NAME,
             $script_id,
             array_keys($this->available_scripts)
         );
@@ -410,7 +387,8 @@ class CronManager
             }
 
             $is_started = (bool) $this->database->query(
-                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status = ?s',
+                'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status = ?s',
+                self::TABLE_NAME,
                 [
                     'inner_status'    => 'in_progress',
                     'progress_status' => null,
@@ -446,8 +424,8 @@ class CronManager
                     ? 'scheduled'
                     : ($exit_code === 0 ? 'completed' : 'failed');
                 $this->database->query(
-                    'UPDATE ?:cron_scripts SET inner_status = IF(inner_status = ?s, ?s, ?s)'
-                    . ' WHERE script_id = ?i AND inner_status IN (?a)',
+                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s) WHERE script_id = ?i AND inner_status IN (?a)',
+                    self::TABLE_NAME,
                     'stopping',
                     $script['run_mode'] === self::RUN_MODE_ONCE ? 'cancelled' : 'scheduled',
                     $result_status,
@@ -488,7 +466,8 @@ class CronManager
             : 'scheduled';
 
         $is_queued = (bool) $this->database->query(
-            'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+            'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+            self::TABLE_NAME,
             [
                 'inner_status' => 'queued',
                 'last_launch'  => TIME,
@@ -505,7 +484,8 @@ class CronManager
         exec($this->prepareBackgroundCommand((int) $script['script_id']), $output, $exit_code);
         if ($exit_code !== 0) {
             $this->database->query(
-                'UPDATE ?:cron_scripts SET inner_status = ?s WHERE script_id = ?i AND inner_status = ?s',
+                'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status = ?s',
+                self::TABLE_NAME,
                 $previous_status,
                 $script['script_id'],
                 'queued'
@@ -518,31 +498,88 @@ class CronManager
     }
 
     /**
-     * Checks whether a cron script must be launched at the specified time.
+     * Checks whether a periodic cron script must be launched at the specified time.
      *
      * @param array<string, array<int, string>|int|string|null> $script    Cron script data
      * @param int|null                                          $timestamp Unix timestamp
      *
      * @return bool
      */
-    public function checkCronRefreshTime(array $script, $timestamp = null)
+    public function isCronScriptDue(array $script, $timestamp = null)
+    {
+        $timestamp = $timestamp === null ? TIME : $timestamp;
+
+        return (int) $script['last_launch'] <= $timestamp - self::MIN_SECONDS_BETWEEN_RUNS
+            && $this->isCronScriptDateDue($script, $timestamp)
+            && $this->isCronScriptTimeDue($script, $timestamp);
+    }
+
+    /**
+     * Checks whether a timestamp matches a script calendar rule.
+     *
+     * @param array<string, array<int, string>|int|string|null> $script    Cron script data
+     * @param int                                               $timestamp Unix timestamp
+     *
+     * @return bool
+     */
+    private function isCronScriptDateDue(array $script, $timestamp)
     {
         $time_vars = $this->getTimeVars($timestamp);
-        if (empty($script['refresh_hours']) && empty($script['refresh_minutes'])) {
-            return $time_vars['hours'] === (int) $script['period_hours_begin']
-                && $time_vars['minutes'] === 0;
+        $month_days = $this->getCronScheduleValues($script, 'period_month_days');
+        if ($month_days) {
+            return in_array($time_vars['month_day'], $month_days, true);
         }
 
+        $week_days = $this->getCronScheduleValues($script, 'period_week_days');
+
+        return !$week_days || in_array($time_vars['week_day'], $week_days, true);
+    }
+
+    /**
+     * Checks whether a timestamp matches a script time rule.
+     *
+     * @param array<string, array<int, string>|int|string|null> $script    Cron script data
+     * @param int                                               $timestamp Unix timestamp
+     *
+     * @return bool
+     */
+    private function isCronScriptTimeDue(array $script, $timestamp)
+    {
+        $time_vars = $this->getTimeVars($timestamp);
+        $start_minutes = (int) $script['period_hours_begin'] * self::MINUTES_IN_HOUR;
+        $current_minutes = $time_vars['hours'] * self::MINUTES_IN_HOUR + $time_vars['minutes'];
         $refresh_minutes = (int) $script['refresh_hours'] * self::MINUTES_IN_HOUR
             + (int) $script['refresh_minutes'];
-        if ($time_vars['hours'] >= $script['period_hours_begin']) {
-            $hours_difference = $time_vars['hours'] - $script['period_hours_begin'];
-        } else {
-            $hours_difference = self::HOURS_IN_DAY - $script['period_hours_begin'] + $time_vars['hours'];
+        if ($refresh_minutes === 0) {
+            return $current_minutes === $start_minutes;
         }
-        $minutes_difference = $hours_difference * self::MINUTES_IN_HOUR + $time_vars['minutes'];
 
-        return $minutes_difference % $refresh_minutes === 0;
+        $end_minutes = (int) $script['period_hours_end'] * self::MINUTES_IN_HOUR;
+
+        return $end_minutes > $start_minutes
+            && $current_minutes >= $start_minutes
+            && $current_minutes < $end_minutes
+            && ($current_minutes - $start_minutes) % $refresh_minutes === 0;
+    }
+
+    /**
+     * Gets non-empty values from a nullable schedule SET field.
+     *
+     * @param array<string, array<int, string>|int|string|null> $script     Cron script data
+     * @param string                                            $field_name Schedule field name
+     *
+     * @return array<int, string>
+     */
+    private function getCronScheduleValues(array $script, $field_name)
+    {
+        $values = isset($script[$field_name]) ? $script[$field_name] : [];
+        if (!is_array($values)) {
+            $values = $values === null || $values === '' ? [] : explode(',', (string) $values);
+        }
+
+        return array_values(array_filter($values, static function ($value) {
+            return $value !== '';
+        }));
     }
 
     /**
@@ -571,7 +608,8 @@ class CronManager
             ? 'cancelled'
             : 'scheduled';
         $this->database->query(
-            'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i',
+            'UPDATE ?:?p SET ?u WHERE script_id = ?i',
+            self::TABLE_NAME,
             ['inner_status' => $inner_status],
             $script['script_id']
         );
@@ -599,8 +637,8 @@ class CronManager
 
         $available_scripts = array_keys($this->available_scripts);
         $is_queued_task_cancelled = (bool) $this->database->query(
-            'UPDATE ?:cron_scripts SET inner_status = IF(run_mode = ?s, ?s, ?s)'
-            . ' WHERE script_id = ?i AND script IN (?a) AND inner_status = ?s',
+            'UPDATE ?:?p SET inner_status = IF(run_mode = ?s, ?s, ?s) WHERE script_id = ?i AND script IN (?a) AND inner_status = ?s',
+            self::TABLE_NAME,
             self::RUN_MODE_ONCE,
             'cancelled',
             'scheduled',
@@ -613,8 +651,8 @@ class CronManager
         }
 
         return (bool) $this->database->query(
-            'UPDATE ?:cron_scripts SET inner_status = ?s'
-            . ' WHERE script_id = ?i AND script IN (?a) AND inner_status IN (?a)',
+            'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND script IN (?a) AND inner_status IN (?a)',
+            self::TABLE_NAME,
             'stopping',
             $script_id,
             $available_scripts,
@@ -632,8 +670,8 @@ class CronManager
     public function markTaskWaitingForChildren($script_id)
     {
         return (bool) $this->database->query(
-            'UPDATE ?:cron_scripts SET inner_status = ?s'
-            . ' WHERE script_id = ?i AND inner_status = ?s',
+            'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status = ?s',
+            self::TABLE_NAME,
             'waiting_children',
             $script_id,
             'in_progress'
@@ -650,8 +688,8 @@ class CronManager
     public function reopenTaskForChildren($script_id)
     {
         return (bool) $this->database->query(
-            'UPDATE ?:cron_scripts SET inner_status = ?s'
-            . ' WHERE script_id = ?i AND inner_status IN (?a)',
+            'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+            self::TABLE_NAME,
             'waiting_children',
             $script_id,
             ['scheduled', 'completed', 'partial_success', 'failed', 'cancelled']
@@ -674,7 +712,8 @@ class CronManager
         }
 
         $script = $this->database->getRow(
-            'SELECT run_mode, inner_status FROM ?:cron_scripts WHERE script_id = ?i',
+            'SELECT run_mode, inner_status FROM ?:?p WHERE script_id = ?i',
+            self::TABLE_NAME,
             $script_id
         );
         if (
@@ -689,7 +728,8 @@ class CronManager
             : $result_status;
 
         return (bool) $this->database->query(
-            'UPDATE ?:cron_scripts SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+            'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+            self::TABLE_NAME,
             $inner_status,
             $script_id,
             ['waiting_children', 'stopping']
@@ -709,7 +749,8 @@ class CronManager
     public function queuePostProcess($script_id, $parent_import_id, $source_type, $result_status)
     {
         $source_script = $this->database->getRow(
-            'SELECT post_process FROM ?:cron_scripts WHERE script_id = ?i',
+            'SELECT post_process FROM ?:?p WHERE script_id = ?i',
+            self::TABLE_NAME,
             $script_id
         );
         if (!$source_script) {
@@ -793,7 +834,8 @@ class CronManager
     private function claimPostProcessTask($dispatch, $import_id)
     {
         $target_script = $this->database->getRow(
-            'SELECT * FROM ?:cron_scripts WHERE script = ?s LIMIT 1',
+            'SELECT * FROM ?:?p WHERE script = ?s LIMIT 1',
+            self::TABLE_NAME,
             $dispatch
         );
         $task_data = [
@@ -807,7 +849,8 @@ class CronManager
         if ($target_script) {
             $script_id = (int) $target_script['script_id'];
             $is_queued = (bool) $this->database->query(
-                'UPDATE ?:cron_scripts SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET ?u WHERE script_id = ?i AND inner_status IN (?a)',
+                self::TABLE_NAME,
                 $task_data,
                 $script_id,
                 ['scheduled', 'completed', 'partial_success', 'failed', 'cancelled']
@@ -831,11 +874,14 @@ class CronManager
         }
 
         $task_data += [
-            'script'           => $dispatch,
-            'period_week_days' => 'monday,tuesday,wednesday,thursday,friday,saturday,sunday',
-            'created'          => TIME,
+            'script'  => $dispatch,
+            'created' => TIME,
         ];
-        $insert_result = (int) $this->database->query('INSERT INTO ?:cron_scripts ?e', $task_data);
+        $insert_result = (int) $this->database->query(
+            'INSERT INTO ?:?p ?e',
+            self::TABLE_NAME,
+            $task_data
+        );
         if (!$insert_result) {
             $this->logPostProcessError(
                 $dispatch,
@@ -868,7 +914,8 @@ class CronManager
         }
 
         $this->database->query(
-            'UPDATE ?:cron_scripts SET inner_status = ?s WHERE script_id = ?i AND inner_status = ?s',
+            'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status = ?s',
+            self::TABLE_NAME,
             'failed',
             $script_id,
             'queued'
@@ -923,7 +970,8 @@ class CronManager
         }
 
         $inner_status = $this->database->getField(
-            'SELECT inner_status FROM ?:cron_scripts WHERE script_id = ?i',
+            'SELECT inner_status FROM ?:?p WHERE script_id = ?i',
+            self::TABLE_NAME,
             $script_id
         );
         if ($inner_status === 'stopping') {
@@ -1031,8 +1079,8 @@ class CronManager
     protected function hasScriptDuplicate($script, $script_id)
     {
         return (bool) $this->database->getField(
-            'SELECT script_id FROM ?:cron_scripts'
-            . ' WHERE script = ?s AND script_id != ?i LIMIT 1',
+            'SELECT script_id FROM ?:?p WHERE script = ?s AND script_id != ?i LIMIT 1',
+            self::TABLE_NAME,
             $script,
             $script_id
         );
@@ -1048,7 +1096,8 @@ class CronManager
     protected function hasRunningScript($script)
     {
         $running_script = $this->database->getRow(
-            'SELECT * FROM ?:cron_scripts WHERE script = ?s AND inner_status = ?s LIMIT 1',
+            'SELECT * FROM ?:?p WHERE script = ?s AND inner_status = ?s LIMIT 1',
+            self::TABLE_NAME,
             $script,
             'in_progress'
         );
@@ -1067,7 +1116,8 @@ class CronManager
     public function updateProgressStatus($script_id, $status)
     {
         $result = $this->database->query(
-            'UPDATE ?:cron_scripts SET progress_status = ?s WHERE script_id = ?i',
+            'UPDATE ?:?p SET progress_status = ?s WHERE script_id = ?i',
+            self::TABLE_NAME,
             $status,
             $script_id
         );
@@ -1079,7 +1129,6 @@ class CronManager
      * Gets allowed SET or ENUM field values.
      *
      * @param string $field_name         Field name
-     * @param string $table_name         Table name without a prefix
      * @param bool   $get_with_lang_vars Whether translated values must be returned
      * @param string $lang_code          Two-letter language code
      *
@@ -1087,15 +1136,14 @@ class CronManager
      */
     public function getSetElements(
         $field_name,
-        $table_name,
         $get_with_lang_vars = false,
         $lang_code = DESCR_SL
     ) {
-        $cache_key = $table_name . '.' . $field_name;
+        $cache_key = $field_name;
         if (empty($this->set_elements[$cache_key])) {
             $column_info = $this->database->getRow(
                 'SHOW COLUMNS FROM ?:?p WHERE Field = ?s',
-                $table_name,
+                self::TABLE_NAME,
                 $field_name
             );
             if (
@@ -1139,10 +1187,10 @@ class CronManager
     {
         $conditions = [];
         if ($find_empty) {
-            $conditions[] = $field_name . " = ''";
+            $conditions[] = $this->database->quote('?f = ?s', $field_name, '');
         }
         foreach ($values as $value) {
-            $conditions[] = $this->database->quote('FIND_IN_SET(?s, ' . $field_name . ')', $value);
+            $conditions[] = $this->database->quote('FIND_IN_SET(?s, ?f)', $value, $field_name);
         }
 
         return implode(' OR ', $conditions);
@@ -1157,7 +1205,7 @@ class CronManager
      */
     public function showShortWeekdays(array $weekdays)
     {
-        $period_week_days = $this->getSetElements('period_week_days', 'cron_scripts');
+        $period_week_days = $this->getSetElements('period_week_days');
         if ($period_week_days === false) {
             return '';
         }
@@ -1258,7 +1306,8 @@ class CronManager
 
         $current_script = $script_id
             ? $this->database->getRow(
-                'SELECT run_mode, inner_status FROM ?:cron_scripts WHERE script_id = ?i',
+                'SELECT run_mode, inner_status FROM ?:?p WHERE script_id = ?i',
+                self::TABLE_NAME,
                 $script_id
             )
             : [];
@@ -1270,6 +1319,10 @@ class CronManager
         ) {
             $script_data['run_mode'] = $current_script['run_mode'];
             $reset_inner_status = false;
+        }
+        $script_data = $this->normalizeScheduleData($script_data);
+        if ($script_data === false) {
+            return false;
         }
 
         $script_data = array_intersect_key($script_data, array_flip([
@@ -1295,35 +1348,186 @@ class CronManager
             $script_data['inner_status'] = 'scheduled';
         }
 
-        $month_days_clause = '';
-        $script_data['period_week_days'] = is_array($script_data['period_week_days'])
-            ? implode(',', $script_data['period_week_days'])
-            : $script_data['period_week_days'];
-
-        if (array_key_exists('period_month_days', $script_data)) {
-            $script_data['period_month_days'] = !empty($script_data['period_month_days'])
-                && is_array($script_data['period_month_days'])
-                ? implode(',', $script_data['period_month_days'])
-                : null;
-
-            if ($script_data['period_month_days'] === null) {
-                unset($script_data['period_month_days']);
-                $month_days_clause = ', period_month_days = NULL';
+        $null_schedule_columns = [];
+        foreach (['period_month_days', 'period_week_days'] as $field_name) {
+            if ($script_data[$field_name] === null) {
+                unset($script_data[$field_name]);
+                $null_schedule_columns[] = $field_name;
             }
         }
+        $null_schedule_clause = $null_schedule_columns
+            ? ', ' . implode(' = NULL, ', $null_schedule_columns) . ' = NULL'
+            : '';
 
         if ($script_id) {
             $this->database->query(
-                'UPDATE ?:cron_scripts SET ?u ?p WHERE script_id = ?i',
+                'UPDATE ?:?p SET ?u ?p WHERE script_id = ?i',
+                self::TABLE_NAME,
                 $script_data,
-                $month_days_clause,
+                $null_schedule_clause,
                 $script_id
             );
         } else {
             $script_data['created'] = TIME;
-            $script_id = (int) $this->database->query('INSERT INTO ?:cron_scripts ?e', $script_data);
+            $script_id = (int) $this->database->query(
+                'INSERT INTO ?:?p ?e',
+                self::TABLE_NAME,
+                $script_data
+            );
         }
 
         return $script_id ? (int) $script_id : false;
+    }
+
+    /**
+     * Validates and normalizes schedule data received from the edit form.
+     *
+     * @param array<string, array<string>|int|string|null> $script_data Schedule form data
+     *
+     * @return array<string, array<string>|int|string|null>|false
+     */
+    private function normalizeScheduleData(array $script_data)
+    {
+        $period_hours_begin = $this->getScheduleNumber(
+            isset($script_data['period_hours_begin']) ? $script_data['period_hours_begin'] : 0,
+            0,
+            self::HOURS_IN_DAY - 1
+        );
+        if ($period_hours_begin === null) {
+            return false;
+        }
+        $script_data['period_hours_begin'] = (string) $period_hours_begin;
+
+        if ($script_data['run_mode'] === self::RUN_MODE_ONCE) {
+            $script_data['period_month_days'] = null;
+            $script_data['period_week_days'] = null;
+
+            return $this->normalizeSingleRunTime($script_data, $period_hours_begin);
+        }
+
+        $script_data = $this->normalizeScheduleDays($script_data);
+        if ($script_data === false) {
+            return false;
+        }
+
+        $time_mode = isset($script_data['period_time_mode']) && is_scalar($script_data['period_time_mode'])
+            ? (string) $script_data['period_time_mode']
+            : 'once';
+        if ($time_mode === 'once') {
+            return $this->normalizeSingleRunTime($script_data, $period_hours_begin);
+        }
+        if ($time_mode !== 'interval') {
+            return false;
+        }
+
+        $period_hours_end = $this->getScheduleNumber(
+            isset($script_data['period_hours_end']) ? $script_data['period_hours_end'] : null,
+            1,
+            self::HOURS_IN_DAY
+        );
+        $refresh_hours = $this->getScheduleNumber(
+            isset($script_data['refresh_hours']) ? $script_data['refresh_hours'] : null,
+            0,
+            self::HOURS_IN_DAY - 1
+        );
+        $refresh_minutes = $this->getScheduleNumber(
+            isset($script_data['refresh_minutes']) ? $script_data['refresh_minutes'] : null,
+            0,
+            self::MINUTES_IN_HOUR - 1
+        );
+        if (
+            $period_hours_end === null
+            || $refresh_hours === null
+            || $refresh_minutes === null
+            || $period_hours_end <= $period_hours_begin
+            || $refresh_hours * self::MINUTES_IN_HOUR + $refresh_minutes === 0
+        ) {
+            return false;
+        }
+
+        $script_data['period_hours_end'] = (string) $period_hours_end;
+        $script_data['refresh_hours'] = (string) $refresh_hours;
+        $script_data['refresh_minutes'] = (string) $refresh_minutes;
+
+        return $script_data;
+    }
+
+    /**
+     * Normalizes the time fields of a once-per-day schedule.
+     *
+     * @param array<string, array<string>|int|string|null> $script_data        Schedule form data
+     * @param int                                          $period_hours_begin Launch hour
+     *
+     * @return array<string, array<string>|int|string|null>
+     */
+    private function normalizeSingleRunTime(array $script_data, $period_hours_begin)
+    {
+        $script_data['period_hours_begin'] = (string) $period_hours_begin;
+        $script_data['period_hours_end'] = (string) $period_hours_begin;
+        $script_data['refresh_hours'] = '0';
+        $script_data['refresh_minutes'] = '0';
+
+        return $script_data;
+    }
+
+    /**
+     * Keeps values that belong only to the selected calendar mode.
+     *
+     * @param array<string, array<string>|int|string|null> $script_data Schedule form data
+     *
+     * @return array<string, array<string>|int|string|null>|false
+     */
+    private function normalizeScheduleDays(array $script_data)
+    {
+        $day_mode = isset($script_data['period_day_mode']) && is_scalar($script_data['period_day_mode'])
+            ? (string) $script_data['period_day_mode']
+            : 'daily';
+        if ($day_mode === 'daily') {
+            $script_data['period_month_days'] = null;
+            $script_data['period_week_days'] = null;
+
+            return $script_data;
+        }
+
+        $field_name = $day_mode === 'week_days' ? 'period_week_days' : 'period_month_days';
+        if ($day_mode !== 'week_days' && $day_mode !== 'month_days') {
+            return false;
+        }
+        $values = isset($script_data[$field_name]) && is_array($script_data[$field_name])
+            ? array_values(array_filter($script_data[$field_name], static function ($value) {
+                return is_scalar($value) && (string) $value !== '';
+            }))
+            : [];
+        if (!$values) {
+            return false;
+        }
+
+        $script_data['period_month_days'] = $field_name === 'period_month_days'
+            ? implode(',', $values)
+            : null;
+        $script_data['period_week_days'] = $field_name === 'period_week_days'
+            ? implode(',', $values)
+            : null;
+
+        return $script_data;
+    }
+
+    /**
+     * Converts a form value to an integer within a schedule range.
+     *
+     * @param int|string|null $value Input value
+     * @param int             $min   Minimum allowed value
+     * @param int             $max   Maximum allowed value
+     *
+     * @return int|null
+     */
+    private function getScheduleNumber($value, $min, $max)
+    {
+        if (!is_scalar($value) || !ctype_digit((string) $value)) {
+            return null;
+        }
+        $number = (int) $value;
+
+        return $number >= $min && $number <= $max ? $number : null;
     }
 }
