@@ -17,6 +17,10 @@
         <sections>
             <section id="general">
                 <items>
+                    <item id="api_key">
+                        <type>input</type>
+                        <default_value/>
+                    </item>
                     <item id="launch_handler">
                         <type>info</type>
                         <handler>fn_clear_cron_info</handler>

@@ -24,7 +24,7 @@ class ProductApplicationManager
 
     const MODE_ACTUALIZE = 'actualize';
 
-    const BATCH_SIZE = 100;
+    const BATCH_SIZE = 30;
 
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityRepository */
     private $repository;

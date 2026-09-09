@@ -31,6 +31,7 @@ namespace Tygh\Addons\Synchro\Importers {
 namespace Tygh\Addons\Synchro\Tests\Unit {
 
 use Tygh\Addons\Synchro\Dto\ProductDto;
+use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Dto\WarehouseDto;
@@ -76,10 +77,13 @@ class ProductImporterTest extends ATestCase
         $product = $this->createProduct();
         $database = $this->createDatabase();
         $mapping_repository = $this->createMappingRepository();
-        $mapping_repository->expects($this->once())
+        $mapping_repository->expects($this->exactly(2))
             ->method('findByExternalIds')
-            ->with(1, ProductDto::ENTITY_TYPE, ['77'])
-            ->willReturn([]);
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, ['77']],
+                [1, CategoryDto::ENTITY_TYPE, ['10']]
+            )
+            ->willReturnOnConsecutiveCalls([], ['10' => ['local_id' => 501]]);
         $mapping_repository->expects($this->once())
             ->method('save')
             ->with(1, ProductDto::ENTITY_TYPE, '77', 100, 'Imported product');
@@ -144,6 +148,7 @@ class ProductImporterTest extends ATestCase
             'seo_name'         => 'imported-product',
             'amount'           => 4,
             'price'            => 250.5,
+            'category_ids'     => [501],
         ], $updated_data);
     }
 
@@ -208,6 +213,149 @@ class ProductImporterTest extends ATestCase
             'product_ids'                 => ['77' => 57],
             'fully_updated_external_ids' => [],
         ], $product_ids);
+    }
+
+    public function testAssignsResolvedCategoriesToProduct()
+    {
+        $product = $this->createProduct();
+        $product->categories = [];
+        $this->addCategory($product, 10);
+        $this->addCategory($product, 20);
+        $mapping_repository = $this->createMappingRepository();
+        $mapping_repository->expects($this->exactly(2))
+            ->method('findByExternalIds')
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, ['77']],
+                [1, CategoryDto::ENTITY_TYPE, ['10', '20']]
+            )
+            ->willReturnOnConsecutiveCalls([], [
+                '10' => ['local_id' => 501],
+                '20' => ['local_id' => 502],
+            ]);
+        $mapping_repository->expects($this->once())->method('save');
+        $warehouse_importer = $this->createWarehouseImporter();
+        $warehouse_importer->method('import')->willReturn(12);
+        $stock_updater = $this->createProductStockUpdater();
+        $stock_updater->expects($this->once())->method('update');
+        $image_importer = $this->createImageImporter();
+        $image_importer->method('findByObjectIds')->willReturn([]);
+        $image_importer->method('import')->willReturn(new OperationResult(true));
+        $updated_data = [];
+        self::$update_product = static function (array $product_data) use (&$updated_data) {
+            $updated_data = $product_data;
+
+            return 100;
+        };
+
+        (new ProductImporter(
+            $this->createDatabase(),
+            $mapping_repository,
+            $this->createFeatureMappingRepository(),
+            $warehouse_importer,
+            $stock_updater,
+            $image_importer
+        ))->import([$product], 1);
+
+        $this->assertSame([501, 502], $updated_data['category_ids']);
+    }
+
+    public function testImportsProductWithResolvedCategoriesAndLogsUnresolvedOnes()
+    {
+        $product = $this->createProduct();
+        $product->categories = [];
+        $this->addCategory($product, 10);
+        $this->addCategory($product, 20);
+        $mapping_repository = $this->createMappingRepository();
+        $mapping_repository->expects($this->exactly(2))
+            ->method('findByExternalIds')
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, ['77']],
+                [1, CategoryDto::ENTITY_TYPE, ['10', '20']]
+            )
+            ->willReturnOnConsecutiveCalls([], ['10' => ['local_id' => 501]]);
+        $mapping_repository->expects($this->once())->method('save');
+        $warehouse_importer = $this->createWarehouseImporter();
+        $warehouse_importer->method('import')->willReturn(12);
+        $stock_updater = $this->createProductStockUpdater();
+        $stock_updater->expects($this->once())->method('update');
+        $image_importer = $this->createImageImporter();
+        $image_importer->method('findByObjectIds')->willReturn([]);
+        $image_importer->method('import')->willReturn(new OperationResult(true));
+        $updated_data = [];
+        self::$update_product = static function (array $product_data) use (&$updated_data) {
+            $updated_data = $product_data;
+
+            return 100;
+        };
+        $logged_errors = [];
+        self::$log_event = static function ($type, $action, array $data) use (&$logged_errors) {
+            $logged_errors[] = $data['error'];
+        };
+
+        $this->assertSame(
+            ['77' => 100],
+            (new ProductImporter(
+                $this->createDatabase(),
+                $mapping_repository,
+                $this->createFeatureMappingRepository(),
+                $warehouse_importer,
+                $stock_updater,
+                $image_importer
+            ))->import([$product], 1)['product_ids']
+        );
+        $this->assertSame([501], $updated_data['category_ids']);
+        $this->assertCount(1, $logged_errors);
+        $this->assertStringContainsString('77', $logged_errors[0]);
+        $this->assertStringContainsString('20', $logged_errors[0]);
+    }
+
+    public function testSkipsProductWhenNoneOfItsCategoriesAreResolved()
+    {
+        $product = $this->createProduct();
+        $product->categories = [];
+        $this->addCategory($product, 10);
+        $mapping_repository = $this->createMappingRepository();
+        $mapping_repository->expects($this->exactly(2))
+            ->method('findByExternalIds')
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, ['77']],
+                [1, CategoryDto::ENTITY_TYPE, ['10']]
+            )
+            ->willReturnOnConsecutiveCalls([], []);
+        $mapping_repository->expects($this->never())->method('save');
+        $warehouse_importer = $this->createWarehouseImporter();
+        $warehouse_importer->expects($this->never())->method('import');
+        $stock_updater = $this->createProductStockUpdater();
+        $stock_updater->expects($this->never())->method('update');
+        $image_importer = $this->createImageImporter();
+        $image_importer->expects($this->once())->method('findByObjectIds')->willReturn([]);
+        $image_importer->expects($this->never())->method('import');
+        self::$update_product = static function () {
+            throw new \RuntimeException('Product updater must not be called');
+        };
+        $logged_errors = [];
+        self::$log_event = static function ($type, $action, array $data) use (&$logged_errors) {
+            $logged_errors[] = $data['error'];
+        };
+
+        $this->assertSame(
+            [
+                'product_ids'                 => [],
+                'fully_updated_external_ids' => [],
+            ],
+            (new ProductImporter(
+                $this->createDatabase(),
+                $mapping_repository,
+                $this->createFeatureMappingRepository(),
+                $warehouse_importer,
+                $stock_updater,
+                $image_importer
+            ))->import([$product], 1)
+        );
+        $this->assertCount(2, $logged_errors);
+        $this->assertStringContainsString('77', $logged_errors[0]);
+        $this->assertStringContainsString('10', $logged_errors[0]);
+        $this->assertStringContainsString('77', $logged_errors[1]);
     }
 
     public function testAssignsOneLocalVariantFromMergedExternalFeatures()
@@ -338,9 +486,13 @@ class ProductImporterTest extends ATestCase
     {
         $product = $this->createProduct();
         $mapping_repository = $this->createMappingRepository();
-        $mapping_repository->expects($this->once())
+        $mapping_repository->expects($this->exactly(2))
             ->method('findByExternalIds')
-            ->willReturn([]);
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, ['77']],
+                [1, CategoryDto::ENTITY_TYPE, ['10']]
+            )
+            ->willReturnOnConsecutiveCalls([], ['10' => ['local_id' => 501]]);
         $warehouse_importer = $this->createWarehouseImporter();
         $warehouse_importer->expects($this->once())
             ->method('import')
@@ -349,9 +501,9 @@ class ProductImporterTest extends ATestCase
         self::$update_product = static function () {
             throw new \RuntimeException('Product updater must not be called');
         };
-        $logged_event = [];
-        self::$log_event = static function ($type, $action, array $data) use (&$logged_event) {
-            $logged_event = [$type, $action, $data];
+        $logged_events = [];
+        self::$log_event = static function ($type, $action, array $data) use (&$logged_events) {
+            $logged_events[] = [$type, $action, $data];
         };
         $stock_updater = $this->createProductStockUpdater();
         $stock_updater->expects($this->never())->method('update');
@@ -375,18 +527,25 @@ class ProductImporterTest extends ATestCase
             'product_ids'                 => [],
             'fully_updated_external_ids' => [],
         ], $product_ids);
-        $this->assertSame(Logging::LOG_TYPE_CRON_MANAGER, $logged_event[0]);
-        $this->assertSame(Logging::ACTION_ERRORS, $logged_event[1]);
-        $this->assertStringContainsString('etm3', $logged_event[2]['error']);
+        $this->assertSame(Logging::LOG_TYPE_CRON_MANAGER, $logged_events[0][0]);
+        $this->assertSame(Logging::ACTION_ERRORS, $logged_events[0][1]);
+        $this->assertStringContainsString('etm3', $logged_events[0][2]['error']);
+        $this->assertCount(2, $logged_events);
+        $this->assertStringContainsString('77', $logged_events[1][2]['error']);
+        $this->assertStringContainsString('warehouse', $logged_events[1][2]['error']);
     }
 
     public function testLogsProductImageFailureReason()
     {
         $product = $this->createProduct();
         $mapping_repository = $this->createMappingRepository();
-        $mapping_repository->expects($this->once())
+        $mapping_repository->expects($this->exactly(2))
             ->method('findByExternalIds')
-            ->willReturn([]);
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, ['77']],
+                [1, CategoryDto::ENTITY_TYPE, ['10']]
+            )
+            ->willReturnOnConsecutiveCalls([], ['10' => ['local_id' => 501]]);
         $mapping_repository->expects($this->once())->method('save');
         $warehouse_importer = $this->createWarehouseImporter();
         $warehouse_importer->expects($this->once())->method('import')->willReturn(12);
@@ -446,8 +605,24 @@ class ProductImporterTest extends ATestCase
         $warehouse->id = 'etm3';
         $warehouse->amount = 3;
         $product->warehouses[] = $warehouse;
+        $this->addCategory($product, 10);
 
         return $product;
+    }
+
+    /**
+     * Adds a category reference to a product.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto $product     Imported product
+     * @param int                                    $category_id External category identifier
+     *
+     * @return void
+     */
+    private function addCategory(ProductDto $product, $category_id)
+    {
+        $category = new CategoryDto();
+        $category->id = $category_id;
+        $product->categories[] = $category;
     }
 
     /**
@@ -495,13 +670,14 @@ class ProductImporterTest extends ATestCase
         array &$logged_errors
     ) {
         $mapping_repository = $this->createMappingRepository();
-        $mapping_repository->expects($this->exactly(2))
+        $mapping_repository->expects($this->exactly(3))
             ->method('findByExternalIds')
             ->withConsecutive(
                 [1, ProductDto::ENTITY_TYPE, [$product->getEntityId()]],
-                [1, ProductFeatureVariantDto::ENTITY_TYPE, array_keys($variant_mappings)]
+                [1, ProductFeatureVariantDto::ENTITY_TYPE, array_keys($variant_mappings)],
+                [1, CategoryDto::ENTITY_TYPE, ['10']]
             )
-            ->willReturnOnConsecutiveCalls([], $variant_mappings);
+            ->willReturnOnConsecutiveCalls([], $variant_mappings, ['10' => ['local_id' => 501]]);
         $mapping_repository->expects($this->once())->method('save');
         $feature_mapping_repository = $this->createFeatureMappingRepository();
         $feature_mapping_repository->expects($this->once())

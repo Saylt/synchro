@@ -3,6 +3,7 @@
 namespace Tygh\Addons\Synchro\Importers;
 
 use Tygh\Addons\Synchro\Dto\ProductDto;
+use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
@@ -83,46 +84,19 @@ class ProductImporter
             ];
         }
 
-        $external_ids = [];
-        foreach ($products as $product) {
-            $external_ids[] = $product->getEntityId();
-        }
-
         $mappings = $this->mapping_repository->findByExternalIds(
             $company_id,
             ProductDto::ENTITY_TYPE,
-            $external_ids
+            $this->getProductExternalIds($products)
         );
         $existing_product_ids = $this->findExistingProductIds($mappings);
         $feature_mappings = [];
         $variant_mappings = [];
 
         if (!$actualize) {
-            $external_feature_ids = [];
-            $external_variant_ids = [];
-
-            foreach ($products as $product) {
-                foreach ($product->features as $feature) {
-                    $external_feature_ids[] = $feature->getEntityId();
-
-                    foreach ($feature->variants as $variant) {
-                        $external_variant_ids[] = $variant->getEntityId();
-                    }
-                }
-            }
-
-            if ($external_feature_ids) {
-                $feature_mappings = $this->feature_mapping_repository->findByExternalIds(
-                    $company_id,
-                    array_values(array_unique($external_feature_ids))
-                );
-                $variant_mappings = $this->mapping_repository->findByExternalIds(
-                    $company_id,
-                    ProductFeatureVariantDto::ENTITY_TYPE,
-                    array_values(array_unique($external_variant_ids))
-                );
-            }
+            list($feature_mappings, $variant_mappings) = $this->findFeatureMappings($products, $company_id);
         }
+        $category_mappings = $actualize ? [] : $this->findCategoryMappings($products, $company_id);
 
         $current_images = $actualize
             ? []
@@ -132,52 +106,30 @@ class ProductImporter
         $product_stocks = [];
 
         foreach ($products as $product) {
+            $result = $this->processProduct(
+                $product,
+                $company_id,
+                $actualize,
+                $mappings,
+                $existing_product_ids,
+                $feature_mappings,
+                $variant_mappings,
+                $category_mappings,
+                $current_images
+            );
+            if (!$result) {
+                continue;
+            }
+
             $external_id = $product->getEntityId();
-            $mapping = isset($mappings[$external_id]) ? $mappings[$external_id] : [];
-            $mapped_product_id = isset($mapping['local_id']) ? (int) $mapping['local_id'] : 0;
-            $product_id = isset($existing_product_ids[$mapped_product_id]) ? $mapped_product_id : 0;
-
-            if ($actualize && !$product_id) {
-                $this->logError(
-                    __('synchro.product_import_error.product_not_found', ['[external_id]' => $external_id])
-                );
-                continue;
-            }
-
-            $warehouse_amounts = $this->importWarehouses($product);
-            if ($warehouse_amounts === false) {
-                continue;
-            }
-
-            if ($actualize) {
-                fn_update_product_prices($product_id, ['price' => $product->price], $company_id);
-            } else {
-                $product_id = $this->importProduct(
-                    $product,
-                    $product_id,
-                    $company_id,
-                    $this->resolveProductFeatureValues($product, $feature_mappings, $variant_mappings)
-                );
-                if (!$product_id) {
-                    continue;
-                }
-
-                if (
-                    $this->syncImages(
-                        $product,
-                        $product_id,
-                        $mapping,
-                        isset($current_images[$product_id]) ? $current_images[$product_id] : []
-                    )
-                ) {
-                    $fully_updated_external_ids[$external_id] = $external_id;
-                }
-            }
-
+            $product_id = $result['product_id'];
             $imported_product_ids[$external_id] = $product_id;
+            if ($result['is_fully_updated']) {
+                $fully_updated_external_ids[] = $external_id;
+            }
             $product_stocks[$product_id] = [
                 'amount'     => $product->amount,
-                'warehouses' => $warehouse_amounts,
+                'warehouses' => $result['warehouse_amounts'],
             ];
         }
 
@@ -187,8 +139,243 @@ class ProductImporter
 
         return [
             'product_ids'                 => $imported_product_ids,
-            'fully_updated_external_ids' => array_values($fully_updated_external_ids),
+            'fully_updated_external_ids' => $fully_updated_external_ids,
         ];
+    }
+
+    /**
+     * Gets the external identifiers of products in a batch.
+     *
+     * @param array<\Tygh\Addons\Synchro\Dto\ProductDto> $products Imported products
+     *
+     * @return array<string>
+     */
+    private function getProductExternalIds(array $products)
+    {
+        $external_ids = [];
+
+        foreach ($products as $product) {
+            $external_ids[] = $product->getEntityId();
+        }
+
+        return $external_ids;
+    }
+
+    /**
+     * Finds local mappings for all features and variants used by a product batch.
+     *
+     * @param array<\Tygh\Addons\Synchro\Dto\ProductDto> $products   Imported products
+     * @param int                                        $company_id Company identifier
+     *
+     * @return array{0: array<string, int>, 1: array<string, array<string, int|string>>}
+     */
+    private function findFeatureMappings(array $products, $company_id)
+    {
+        $external_feature_ids = [];
+        $external_variant_ids = [];
+
+        foreach ($products as $product) {
+            foreach ($product->features as $feature) {
+                $external_feature_ids[] = $feature->getEntityId();
+
+                foreach ($feature->variants as $variant) {
+                    $external_variant_ids[] = $variant->getEntityId();
+                }
+            }
+        }
+
+        if (!$external_feature_ids) {
+            return [[], []];
+        }
+
+        return [
+            $this->feature_mapping_repository->findByExternalIds(
+                $company_id,
+                array_values(array_unique($external_feature_ids))
+            ),
+            $this->mapping_repository->findByExternalIds(
+                $company_id,
+                ProductFeatureVariantDto::ENTITY_TYPE,
+                array_values(array_unique($external_variant_ids))
+            ),
+        ];
+    }
+
+    /**
+     * Finds local mappings for all categories referenced by a product batch.
+     *
+     * @param array<\Tygh\Addons\Synchro\Dto\ProductDto> $products   Imported products
+     * @param int                                        $company_id Company identifier
+     *
+     * @return array<string, array<string, int|string>>
+     */
+    private function findCategoryMappings(array $products, $company_id)
+    {
+        $external_category_ids = [];
+
+        foreach ($products as $product) {
+            foreach ($product->categories as $category) {
+                $external_category_ids[] = $category->getEntityId();
+            }
+        }
+        if (!$external_category_ids) {
+            return [];
+        }
+
+        return $this->mapping_repository->findByExternalIds(
+            $company_id,
+            CategoryDto::ENTITY_TYPE,
+            array_values(array_unique($external_category_ids))
+        );
+    }
+
+    /**
+     * Imports or actualizes one product and prepares its stock update.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto                                                             $product              Imported product
+     * @param int                                                                                             $company_id           Company identifier
+     * @param bool                                                                                            $actualize            Whether only price and stock must be updated
+     * @param array<string, array<string, int|string>>                                                        $mappings             Product mappings
+     * @param array<int, true>                                                                                $existing_product_ids Existing local product identifiers
+     * @param array<string, int>                                                                              $feature_mappings     External-to-local feature mappings
+     * @param array<string, array<string, int|string>>                                                        $variant_mappings     External-to-local variant mappings
+     * @param array<string, array<string, int|string>>                                                        $category_mappings    External-to-local category mappings
+     * @param array<int, array<string, array{pair_id: int, type: string, position: int, image_path: string}>> $current_images       Current product images
+     *
+     * @return array{product_id: int, warehouse_amounts: array<int, int>, is_fully_updated: bool}|null
+     */
+    private function processProduct(
+        ProductDto $product,
+        $company_id,
+        $actualize,
+        array $mappings,
+        array $existing_product_ids,
+        array $feature_mappings,
+        array $variant_mappings,
+        array $category_mappings,
+        array $current_images
+    ) {
+        $external_id = $product->getEntityId();
+        $mapping = isset($mappings[$external_id]) ? $mappings[$external_id] : [];
+        $product_id = $this->findMappedProductId($mapping, $existing_product_ids);
+
+        if ($actualize && !$product_id) {
+            $this->logError(
+                __('synchro.product_import_error.product_not_found', ['[external_id]' => $external_id])
+            );
+
+            return null;
+        }
+
+        $category_ids = $actualize ? [] : $this->resolveProductCategoryIds($product, $category_mappings);
+        if (!$actualize && !$category_ids) {
+            $this->logError(
+                __('synchro.product_import_error.categories_not_resolved', ['[external_id]' => $external_id])
+            );
+
+            return null;
+        }
+
+        $warehouse_amounts = $this->importWarehouses($product);
+        if ($warehouse_amounts === false) {
+            $this->logError(__('synchro.product_import_error.skipped_warehouse_not_resolved', [
+                '[external_id]' => $external_id,
+            ]));
+
+            return null;
+        }
+
+        if ($actualize) {
+            $this->actualizeProduct($product, $product_id, $company_id);
+
+            return [
+                'product_id'       => $product_id,
+                'warehouse_amounts' => $warehouse_amounts,
+                'is_fully_updated' => false,
+            ];
+        }
+
+        $product_id = $this->saveProduct(
+            $product,
+            $product_id,
+            $company_id,
+            $this->resolveProductFeatureValues($product, $feature_mappings, $variant_mappings),
+            $category_ids
+        );
+        if (!$product_id) {
+            return null;
+        }
+
+        return [
+            'product_id'       => $product_id,
+            'warehouse_amounts' => $warehouse_amounts,
+            'is_fully_updated' => $this->syncImages(
+                $product,
+                $product_id,
+                $mapping,
+                isset($current_images[$product_id]) ? $current_images[$product_id] : []
+            ),
+        ];
+    }
+
+    /**
+     * Finds an existing local product from its external mapping.
+     *
+     * @param array<string, int|string> $mapping              Product mapping
+     * @param array<int, true>          $existing_product_ids Existing local product identifiers
+     *
+     * @return int
+     */
+    private function findMappedProductId(array $mapping, array $existing_product_ids)
+    {
+        $mapped_product_id = isset($mapping['local_id']) ? (int) $mapping['local_id'] : 0;
+
+        return isset($existing_product_ids[$mapped_product_id]) ? $mapped_product_id : 0;
+    }
+
+    /**
+     * Actualizes the price of an existing product.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto $product    Imported product
+     * @param int                                 $product_id Local product identifier
+     * @param int                                 $company_id Company identifier
+     *
+     * @return void
+     */
+    private function actualizeProduct(ProductDto $product, $product_id, $company_id)
+    {
+        fn_update_product_prices($product_id, ['price' => $product->price], $company_id);
+    }
+
+    /**
+     * Resolves all mapped local category identifiers for a product.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto      $product           Imported product
+     * @param array<string, array<string, int|string>> $category_mappings External-to-local category mappings
+     *
+     * @return array<int>
+     */
+    private function resolveProductCategoryIds(ProductDto $product, array $category_mappings)
+    {
+        $category_ids = [];
+
+        foreach ($product->categories as $category) {
+            $external_category_id = $category->getEntityId();
+            $category_id = isset($category_mappings[$external_category_id]['local_id'])
+                ? (int) $category_mappings[$external_category_id]['local_id']
+                : 0;
+            if (!$category_id) {
+                $this->logError(__('synchro.product_import_error.category_mapping_not_found', [
+                    '[external_id]'          => $product->getEntityId(),
+                    '[category_external_id]' => $external_category_id,
+                ]));
+                continue;
+            }
+
+            $category_ids[] = $category_id;
+        }
+
+        return $category_ids;
     }
 
     /**
@@ -254,11 +441,17 @@ class ProductImporter
      * @param int                                 $product_id             Existing local product identifier
      * @param int                                 $company_id             Company identifier
      * @param array<int, int>                     $product_feature_values Product feature values
+     * @param array<int>                          $category_ids           Local category identifiers
      *
      * @return int
      */
-    private function importProduct(ProductDto $product, $product_id, $company_id, array $product_feature_values)
-    {
+    private function saveProduct(
+        ProductDto $product,
+        $product_id,
+        $company_id,
+        array $product_feature_values,
+        array $category_ids
+    ) {
         $product_data = [
             'product'          => $product->name,
             'product_code'     => $product->product_code,
@@ -270,6 +463,9 @@ class ProductImporter
 
         if ($product_feature_values) {
             $product_data['product_features'] = $product_feature_values;
+        }
+        if ($category_ids) {
+            $product_data['category_ids'] = $category_ids;
         }
 
         if (!$product_id) {

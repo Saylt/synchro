@@ -268,6 +268,10 @@ msgctxt "Languages::synchro.api_invalid_response"
 msgid "Synchro API returned an invalid response for \"[action]\"."
 msgstr "Synchro API returned an invalid response for \"[action]\"."
 
+msgctxt "SettingsOptions::synchro::api_key"
+msgid "API key"
+msgstr "API key"
+
 msgctxt "Languages::synchro.sync_data_name"
 msgid "Synchro product feature mapping"
 msgstr "Synchro product feature mapping"
@@ -384,6 +388,14 @@ msgctxt "Languages::synchro.product_import_error.feature_mapping_not_found"
 msgid "Product [external_id] references imported feature [feature_external_id] without a mapping."
 msgstr "Product [external_id] references imported feature [feature_external_id] without a mapping."
 
+msgctxt "Languages::synchro.product_import_error.category_mapping_not_found"
+msgid "Product [external_id] references imported category [category_external_id] without a mapping."
+msgstr "Product [external_id] references imported category [category_external_id] without a mapping."
+
+msgctxt "Languages::synchro.product_import_error.categories_not_resolved"
+msgid "No imported categories could be resolved for product [external_id]."
+msgstr "No imported categories could be resolved for product [external_id]."
+
 msgctxt "Languages::synchro.product_import_settings"
 msgid "Product import settings"
 msgstr "Product import settings"
@@ -483,6 +495,10 @@ msgstr "The mapped product for external ID [external_id] was not found."
 msgctxt "Languages::synchro.product_import_error.warehouse_not_resolved"
 msgid "Warehouse [warehouse] could not be resolved for product with external ID [external_id]."
 msgstr "Warehouse [warehouse] could not be resolved for product with external ID [external_id]."
+
+msgctxt "Languages::synchro.product_import_error.skipped_warehouse_not_resolved"
+msgid "Product [external_id] was skipped because one or more warehouses could not be resolved."
+msgstr "Product [external_id] was skipped because one or more warehouses could not be resolved."
 
 msgctxt "Languages::synchro.product_import_error.update_failed"
 msgid "Product with external ID [external_id] could not be updated."

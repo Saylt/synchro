@@ -6,7 +6,6 @@ use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Addons\Synchro\ServiceProvider;
-use Tygh\Http;
 use Tygh\Registry;
 
 defined('BOOTSTRAP') or die('Access denied');
@@ -104,53 +103,7 @@ if ($mode === 'actualize_products') {
     return [CONTROLLER_STATUS_NO_CONTENT];
 }
 
-$api_url = 'https://svetelektro.net/index.php?option=com_vmtools&task=exportall.make'
-    . '&centerkey=54ffc087d87dae187499273060174614';
-
-$get_api_data = static function (string $action, array $request_data = []) use ($api_url): array {
-    $is_http_logging_enabled = Http::$logging;
-    Http::$logging = false;
-
-    try {
-        $response = Http::get(
-            $api_url,
-            array_merge(['action' => $action], $request_data)
-        );
-    } finally {
-        Http::$logging = $is_http_logging_enabled;
-    }
-
-    if (!is_string($response) || Http::getStatus() !== Http::STATUS_OK) {
-        throw new RuntimeException(__('synchro.api_request_failed', [
-            '[action]' => $action,
-            '[error]'  => Http::getError() ?: __('error_occurred'),
-        ]));
-    }
-
-    $data = json_decode($response, true);
-    if (!is_array($data)) {
-        throw new RuntimeException(__('synchro.api_invalid_response', [
-            '[action]' => $action,
-        ]));
-    }
-
-    if (empty($data['ok'])) {
-        throw new RuntimeException(__('synchro.api_request_failed', [
-            '[action]' => $action,
-            '[error]'  => $data['error'],
-        ]));
-    }
-
-    /**
-     * @var array{
-     *     ok: int,
-     *     error: string,
-     *     pgn: array{total: int, pages: int, limit: int, page: int},
-     *     data: array<array-key, array>
-     * } $data
-     */
-    return $data;
-};
+$api_client = ServiceProvider::getApiClient();
 
 if ($mode === 'products') {
     $script = $cron_script_id ? $cron_manager->getCronScriptData($cron_script_id) : [];
@@ -164,7 +117,7 @@ if ($mode === 'products') {
         if ($script['is_test_import'] === 'Y') {
             $total_items = 10;
         } else {
-            $metadata = $get_api_data(ImportDataCommand::ENTITY_PRODUCTS, [
+            $metadata = $api_client->getData(ImportDataCommand::ENTITY_PRODUCTS, [
                 'page'  => 1,
                 'limit' => 1,
             ]);
@@ -221,7 +174,7 @@ if ($mode === 'product_process') {
         for ($page = (int) $process['page_from']; $page <= (int) $process['page_to']; $page++) {
             $import_process_manager->ensureProcessCanContinue($import_id);
             $import_process_manager->updateProgress($import_id, $page);
-            $data = $get_api_data(ImportDataCommand::ENTITY_PRODUCTS, [
+            $data = $api_client->getData(ImportDataCommand::ENTITY_PRODUCTS, [
                 'page'  => $page,
                 'limit' => (int) $process['page_limit'],
             ]);
@@ -267,7 +220,7 @@ if ($mode === 'categories') {
     $import_id = $import_repository->startImport($company_id, ImportDataCommand::ENTITY_CATEGORIES);
 
     try {
-        $data = $get_api_data(ImportDataCommand::ENTITY_CATEGORIES);
+        $data = $api_client->getData(ImportDataCommand::ENTITY_CATEGORIES);
         $command_bus = ServiceProvider::getCommandBus();
         $command_bus->dispatch(
             ImportDataCommand::create(
@@ -308,7 +261,7 @@ if ($mode === 'manufacturers') {
     $import_id = $import_repository->startImport($company_id, ImportDataCommand::ENTITY_MANUFACTURERS);
 
     try {
-        $data = $get_api_data(ImportDataCommand::ENTITY_MANUFACTURERS);
+        $data = $api_client->getData(ImportDataCommand::ENTITY_MANUFACTURERS);
         $command_bus = ServiceProvider::getCommandBus();
         $command_bus->dispatch(
             ImportDataCommand::create(

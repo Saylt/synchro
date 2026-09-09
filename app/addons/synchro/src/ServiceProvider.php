@@ -7,6 +7,7 @@ use Pimple\ServiceProviderInterface;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Tygh\Addons\Synchro\Application\CategoryApplicationManager;
 use Tygh\Addons\Synchro\Application\ProductApplicationManager;
+use Tygh\Addons\Synchro\Api\ApiClient;
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Commands\ImportDataCommandHandler;
 use Tygh\Addons\Synchro\Convertors\CategoryConvertor;
@@ -42,6 +43,10 @@ class ServiceProvider implements ServiceProviderInterface
      */
     public function register(Container $app): void
     {
+        $app['addons.synchro.api.client'] = static function () {
+            return new ApiClient((string) Registry::get('addons.synchro.api_key'));
+        };
+
         $app['addons.synchro.cron_manager'] = static function (Container $app) {
             $php_binary_finder = new PhpExecutableFinder();
 
@@ -227,6 +232,14 @@ class ServiceProvider implements ServiceProviderInterface
     public static function getCronManager()
     {
         return Tygh::$app['addons.synchro.cron_manager'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\Api\ApiClient
+     */
+    public static function getApiClient()
+    {
+        return Tygh::$app['addons.synchro.api.client'];
     }
 
     /**
