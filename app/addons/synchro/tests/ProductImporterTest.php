@@ -13,13 +13,6 @@ namespace Tygh\Addons\Synchro\Importers {
         return ProductImporterTest::updateProductPrices($product_id, $product_data, $company_id);
     }
 
-    if (!function_exists(__NAMESPACE__ . '\\fn_log_event')) {
-        function fn_log_event($type, $action, array $data)
-        {
-            call_user_func($GLOBALS['synchro_importer_log_event'], $type, $action, $data);
-        }
-    }
-
     if (!function_exists(__NAMESPACE__ . '\\__')) {
         function __($name, array $params = [])
         {
@@ -35,11 +28,11 @@ use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Dto\WarehouseDto;
-use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Importers\ImageImporter;
 use Tygh\Addons\Synchro\Importers\ProductImporter;
 use Tygh\Addons\Synchro\Importers\ProductStockUpdater;
 use Tygh\Addons\Synchro\Importers\WarehouseImporter;
+use Tygh\Addons\Synchro\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Common\OperationResult;
@@ -54,21 +47,12 @@ class ProductImporterTest extends ATestCase
     /** @var callable */
     public static $update_product_prices;
 
-    /** @var callable */
-    public static $log_event;
-
     protected function setUp(): void
     {
         parent::setUp();
 
         self::$update_product_prices = static function () {
             throw new \RuntimeException('Price updater must not be called');
-        };
-        self::$log_event = static function () {
-            throw new \RuntimeException('Logger must not be called');
-        };
-        $GLOBALS['synchro_importer_log_event'] = static function ($type, $action, array $data) {
-            ProductImporterTest::logEvent($type, $action, $data);
         };
     }
 
@@ -288,9 +272,7 @@ class ProductImporterTest extends ATestCase
             return 100;
         };
         $logged_errors = [];
-        self::$log_event = static function ($type, $action, array $data) use (&$logged_errors) {
-            $logged_errors[] = $data['error'];
-        };
+        $logging = $this->createCapturingLogging($logged_errors);
 
         $this->assertSame(
             ['77' => 100],
@@ -300,7 +282,8 @@ class ProductImporterTest extends ATestCase
                 $this->createFeatureMappingRepository(),
                 $warehouse_importer,
                 $stock_updater,
-                $image_importer
+                $image_importer,
+                $logging
             ))->import([$product], 1)['product_ids']
         );
         $this->assertSame([501], $updated_data['category_ids']);
@@ -334,9 +317,7 @@ class ProductImporterTest extends ATestCase
             throw new \RuntimeException('Product updater must not be called');
         };
         $logged_errors = [];
-        self::$log_event = static function ($type, $action, array $data) use (&$logged_errors) {
-            $logged_errors[] = $data['error'];
-        };
+        $logging = $this->createCapturingLogging($logged_errors);
 
         $this->assertSame(
             [
@@ -349,7 +330,8 @@ class ProductImporterTest extends ATestCase
                 $this->createFeatureMappingRepository(),
                 $warehouse_importer,
                 $stock_updater,
-                $image_importer
+                $image_importer,
+                $logging
             ))->import([$product], 1)
         );
         $this->assertCount(2, $logged_errors);
@@ -453,10 +435,10 @@ class ProductImporterTest extends ATestCase
         self::$update_product = static function () {
             throw new \RuntimeException('Product updater must not be called');
         };
-        $logged_event = [];
-        self::$log_event = static function ($type, $action, array $data) use (&$logged_event) {
-            $logged_event = [$type, $action, $data];
-        };
+        $logging = $this->createMock(Logging::class);
+        $logging->expects($this->once())
+            ->method('error')
+            ->with('synchro_import.products', $this->stringContains('77'));
         $stock_updater = $this->createProductStockUpdater();
         $stock_updater->expects($this->never())->method('update');
         $image_importer = $this->createImageImporter();
@@ -469,17 +451,14 @@ class ProductImporterTest extends ATestCase
             $this->createFeatureMappingRepository(),
             $warehouse_importer,
             $stock_updater,
-            $image_importer
+            $image_importer,
+            $logging
         ))->import([$product], 1, true);
 
         $this->assertSame([
             'product_ids'                 => [],
             'fully_updated_external_ids' => [],
         ], $product_ids);
-        $this->assertSame(Logging::LOG_TYPE_CRON_MANAGER, $logged_event[0]);
-        $this->assertSame(Logging::ACTION_ERRORS, $logged_event[1]);
-        $this->assertSame('synchro_import.products', $logged_event[2]['script']);
-        $this->assertStringContainsString('77', $logged_event[2]['error']);
     }
 
     public function testLogsWarehouseResolutionFailure()
@@ -501,10 +480,8 @@ class ProductImporterTest extends ATestCase
         self::$update_product = static function () {
             throw new \RuntimeException('Product updater must not be called');
         };
-        $logged_events = [];
-        self::$log_event = static function ($type, $action, array $data) use (&$logged_events) {
-            $logged_events[] = [$type, $action, $data];
-        };
+        $logged_errors = [];
+        $logging = $this->createCapturingLogging($logged_errors);
         $stock_updater = $this->createProductStockUpdater();
         $stock_updater->expects($this->never())->method('update');
         $image_importer = $this->createImageImporter();
@@ -520,19 +497,18 @@ class ProductImporterTest extends ATestCase
             $this->createFeatureMappingRepository(),
             $warehouse_importer,
             $stock_updater,
-            $image_importer
+            $image_importer,
+            $logging
         ))->import([$product], 1);
 
         $this->assertSame([
             'product_ids'                 => [],
             'fully_updated_external_ids' => [],
         ], $product_ids);
-        $this->assertSame(Logging::LOG_TYPE_CRON_MANAGER, $logged_events[0][0]);
-        $this->assertSame(Logging::ACTION_ERRORS, $logged_events[0][1]);
-        $this->assertStringContainsString('etm3', $logged_events[0][2]['error']);
-        $this->assertCount(2, $logged_events);
-        $this->assertStringContainsString('77', $logged_events[1][2]['error']);
-        $this->assertStringContainsString('warehouse', $logged_events[1][2]['error']);
+        $this->assertStringContainsString('etm3', $logged_errors[0]);
+        $this->assertCount(2, $logged_errors);
+        $this->assertStringContainsString('77', $logged_errors[1]);
+        $this->assertStringContainsString('warehouse', $logged_errors[1]);
     }
 
     public function testLogsProductImageFailureReason()
@@ -561,10 +537,14 @@ class ProductImporterTest extends ATestCase
         self::$update_product = static function () {
             return 100;
         };
-        $logged_error = '';
-        self::$log_event = static function ($type, $action, array $data) use (&$logged_error) {
-            $logged_error = $data['error'];
-        };
+        $logged_warnings = [];
+        $logging = $this->createMock(Logging::class);
+        $logging->expects($this->once())
+            ->method('warning')
+            ->with('synchro_import.products', $this->isType('string'))
+            ->willReturnCallback(static function ($source, $message) use (&$logged_warnings) {
+                $logged_warnings[] = $message;
+            });
 
         $this->assertSame(
             [
@@ -577,11 +557,12 @@ class ProductImporterTest extends ATestCase
                 $this->createFeatureMappingRepository(),
                 $warehouse_importer,
                 $stock_updater,
-                $image_importer
+                $image_importer,
+                $logging
             ))->import([$product], 1)
         );
-        $this->assertStringContainsString('77', $logged_error);
-        $this->assertStringContainsString('Image download failed', $logged_error);
+        $this->assertStringContainsString('77', $logged_warnings[0]);
+        $this->assertStringContainsString('Image download failed', $logged_warnings[0]);
     }
 
     /**
@@ -696,9 +677,7 @@ class ProductImporterTest extends ATestCase
 
             return 100;
         };
-        self::$log_event = static function ($type, $action, array $data) use (&$logged_errors) {
-            $logged_errors[] = $data['error'];
-        };
+        $logging = $this->createCapturingLogging($logged_errors);
 
         return (new ProductImporter(
             $this->createDatabase(),
@@ -706,7 +685,8 @@ class ProductImporterTest extends ATestCase
             $feature_mapping_repository,
             $warehouse_importer,
             $stock_updater,
-            $image_importer
+            $image_importer,
+            $logging
         ))->import([$product], 1);
     }
 
@@ -800,15 +780,20 @@ class ProductImporterTest extends ATestCase
     }
 
     /**
-     * @param string $type   Log type
-     * @param string $action Log action
-     * @param array  $data   Log data
+     * @param array<string> $errors Captured error messages
      *
-     * @return void
+     * @return \PHPUnit\Framework\MockObject\MockObject|\Tygh\Addons\Synchro\Logging
      */
-    public static function logEvent($type, $action, array $data)
+    private function createCapturingLogging(array &$errors)
     {
-        call_user_func(self::$log_event, $type, $action, $data);
+        $logging = $this->createMock(Logging::class);
+        $capture = static function ($source, $message) use (&$errors) {
+            $errors[] = $message;
+        };
+        $logging->method('error')->willReturnCallback($capture);
+        $logging->method('warning')->willReturnCallback($capture);
+
+        return $logging;
     }
 }
 }

@@ -149,6 +149,11 @@ if ($mode === 'manage') {
         die(__('access_denied'));
     }
 
+    $log_cleanup_days = (int) Registry::get('addons.synchro.log_cleanup_days');
+    if ($log_cleanup_days > 0) {
+        ServiceProvider::getLogging()->removeOlderThan($log_cleanup_days);
+    }
+
     if ($cron_manager->isMaintenanceMode()) {
         exit;
     }

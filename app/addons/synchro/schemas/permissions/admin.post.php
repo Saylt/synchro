@@ -18,6 +18,7 @@ defined('BOOTSTRAP') or die('Access denied');
 /** @var array<string, array> $schema */
 
 $schema['cron_script_manager']['permissions'] = 'manage_cron_scripts';
+$schema['synchro_logs']['permissions'] = 'manage_synchro_import';
 $schema['synchro_import']['permissions'] = 'manage_synchro_import';
 $schema['sync_data']['modes']['update']['param_permissions']['sync_provider_id']['synchro'] =
     'manage_synchro_import';

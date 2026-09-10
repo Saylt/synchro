@@ -11,5 +11,13 @@ $schema['top']['administration']['items']['cron_script_manager'] = [
         'class' => 'is-addon',
     ],
 ];
+$schema['top']['administration']['items']['synchro_logs'] = [
+    'href'     => 'synchro_logs.manage',
+    'title'    => __('synchro.logs'),
+    'position' => 1001,
+    'attrs'    => [
+        'class' => 'is-addon',
+    ],
+];
 
 return $schema;

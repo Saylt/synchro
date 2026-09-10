@@ -23,6 +23,10 @@
                         <type>input</type>
                         <default_value/>
                     </item>
+                    <item id="log_cleanup_days">
+                        <type>input</type>
+                        <default_value>0</default_value>
+                    </item>
                     <item id="launch_handler">
                         <type>info</type>
                         <handler>fn_clear_cron_info</handler>

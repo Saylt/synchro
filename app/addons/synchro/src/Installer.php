@@ -3,10 +3,7 @@
 namespace Tygh\Addons\Synchro;
 
 use Tygh\Addons\InstallerInterface;
-use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Core\ApplicationInterface;
-use Tygh\Languages\Languages;
-use Tygh\Settings;
 
 /**
  * Provides instructions to install and uninstall the synchro add-on.
@@ -43,8 +40,8 @@ class Installer implements InstallerInterface
         $this->createImportEntitiesTable();
         $this->createImportEntityMapTable();
         $this->createProductFeatureMappingsTable();
+        $this->createLogsTable();
         $this->addImportPrivilege();
-        $this->addLoggingSetting();
     }
 
     /**
@@ -57,10 +54,9 @@ class Installer implements InstallerInterface
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entity_map');
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entities');
         db_query('DROP TABLE IF EXISTS ?:synchro_imports');
-        db_query('DELETE FROM ?:logs WHERE type = ?s', Logging::LOG_TYPE_CRON_MANAGER);
+        db_query('DROP TABLE IF EXISTS ?:synchro_logs');
 
         $this->removeImportPrivilege();
-        $this->removeLoggingSetting();
     }
 
     /**
@@ -268,81 +264,27 @@ SQL;
     }
 
     /**
-     * Adds cron manager logging settings.
+     * Creates the table that stores Synchro journal entries.
      *
      * @return void
      */
-    protected function addLoggingSetting()
+    protected function createLogsTable()
     {
-        $settings = Settings::instance();
-        $setting_name = 'log_type_' . Logging::LOG_TYPE_CRON_MANAGER;
-        $setting = $settings->getSettingDataByName($setting_name);
-        $logging_section = $settings->getSectionByName('Logging');
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_logs (
+    log_id int(11) unsigned NOT NULL AUTO_INCREMENT,
+    timestamp int(11) unsigned NOT NULL DEFAULT '0',
+    level enum('info', 'warning', 'error') NOT NULL DEFAULT 'info',
+    source varchar(255) NOT NULL DEFAULT '',
+    message text NOT NULL,
+    context mediumtext,
+    PRIMARY KEY (log_id),
+    KEY idx_timestamp (timestamp),
+    KEY idx_level (level),
+    KEY idx_source (source)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
 
-        if ($setting || empty($logging_section['section_id'])) {
-            return;
-        }
-
-        $setting = [
-            'name'           => $setting_name,
-            'section_id'     => $logging_section['section_id'],
-            'section_tab_id' => 0,
-            'type'           => 'N',
-            'position'       => 20,
-            'is_global'      => 'Y',
-            'edition_type'   => 'ROOT',
-        ];
-
-        $lang_codes = array_keys(Languages::getAll());
-        $descriptions = [];
-        foreach ($lang_codes as $lang_code) {
-            $descriptions[] = [
-                'object_type' => Settings::SETTING_DESCRIPTION,
-                'lang_code'   => $lang_code,
-                'value'       => __('synchro.log_type_crons_manager', [], $lang_code),
-            ];
-        }
-
-        $setting_id = $settings->update($setting, null, $descriptions, true);
-        if (!$setting_id) {
-            return;
-        }
-
-        $actions = Logging::getActions();
-        foreach ($actions as $action) {
-            $variant_id = $settings->updateVariant([
-                'object_id' => $setting_id,
-                'name'      => $action,
-                'position'  => 5,
-            ]);
-
-            foreach ($lang_codes as $lang_code) {
-                $settings->updateDescription([
-                    'object_id'   => $variant_id,
-                    'object_type' => Settings::VARIANT_DESCRIPTION,
-                    'lang_code'   => $lang_code,
-                    'value'       => __('synchro.log_action_' . $action, [], $lang_code),
-                ]);
-            }
-        }
-
-        $settings->updateValue($setting_name, $actions, 'Logging');
-    }
-
-    /**
-     * Removes cron manager logging settings.
-     *
-     * @return void
-     */
-    protected function removeLoggingSetting()
-    {
-        $settings = Settings::instance();
-        $setting = $settings->getSettingDataByName('log_type_' . Logging::LOG_TYPE_CRON_MANAGER);
-
-        if (!$setting) {
-            return;
-        }
-
-        $settings->removeById($setting['object_id']);
+        db_query($query);
     }
 }

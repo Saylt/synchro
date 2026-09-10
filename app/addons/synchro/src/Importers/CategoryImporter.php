@@ -3,7 +3,7 @@
 namespace Tygh\Addons\Synchro\Importers;
 
 use Tygh\Addons\Synchro\Dto\CategoryDto;
-use Tygh\Addons\Synchro\Enum\Logging;
+use Tygh\Addons\Synchro\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Common\OperationResult;
@@ -15,6 +15,8 @@ use Tygh\Enum\ObjectStatuses;
  */
 class CategoryImporter
 {
+    const LOG_SOURCE = 'synchro_import.categories';
+
     /** @var \Tygh\Database\Connection */
     private $database;
 
@@ -24,21 +26,27 @@ class CategoryImporter
     /** @var \Tygh\Addons\Synchro\Importers\ImageImporter */
     private $image_importer;
 
+    /** @var \Tygh\Addons\Synchro\Logging */
+    private $logging;
+
     /**
      * Initializes the category importer.
      *
      * @param \Tygh\Database\Connection                                 $database           Database connection
      * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository $mapping_repository Entity mapping repository
      * @param \Tygh\Addons\Synchro\Importers\ImageImporter              $image_importer     Image importer
+     * @param \Tygh\Addons\Synchro\Logging|null                         $logging            Synchro journal service
      */
     public function __construct(
         Connection $database,
         ImportEntityMapRepository $mapping_repository,
-        ImageImporter $image_importer
+        ImageImporter $image_importer,
+        Logging $logging = null
     ) {
         $this->database = $database;
         $this->mapping_repository = $mapping_repository;
         $this->image_importer = $image_importer;
+        $this->logging = $logging ?: new Logging($database);
     }
 
     /**
@@ -177,7 +185,7 @@ class CategoryImporter
             }
 
             if ($parent_external_id !== '' && !isset($resolved_parent_category_ids[$parent_external_id])) {
-                $this->logError(__('synchro.category_import_error.parent_not_imported', [
+                $this->logging->error(self::LOG_SOURCE, __('synchro.category_import_error.parent_not_imported', [
                     '[external_id]'        => $external_id,
                     '[parent_external_id]' => $parent_external_id,
                 ]));
@@ -194,7 +202,7 @@ class CategoryImporter
             ], $category_id);
 
             if (!$category_id) {
-                $this->logError(__('synchro.category_import_error.update_failed', [
+                $this->logging->error(self::LOG_SOURCE, __('synchro.category_import_error.update_failed', [
                     '[external_id]' => $external_id,
                 ]));
                 continue;
@@ -250,25 +258,10 @@ class CategoryImporter
         $errors = $result->getErrors();
 
         foreach ($errors as $error) {
-            $this->logError(__('synchro.category_import_error.image_sync_failed', [
+            $this->logging->warning(self::LOG_SOURCE, __('synchro.category_import_error.image_sync_failed', [
                 '[external_id]' => $external_id,
                 '[error]'       => $error,
             ]));
         }
-    }
-
-    /**
-     * Writes a category import error to the Synchro log.
-     *
-     * @param string $error Error message
-     *
-     * @return void
-     */
-    private function logError($error)
-    {
-        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-            'script' => 'synchro_import.categories',
-            'error'  => $error,
-        ]);
     }
 }

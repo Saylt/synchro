@@ -2,7 +2,6 @@
 
 namespace Tygh\Addons\Synchro;
 
-use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Database\Connection;
 use Tygh\Lock\Factory;
@@ -37,6 +36,9 @@ class CronManager
      * @var \Tygh\Database\Connection
      */
     protected $database;
+
+    /** @var \Tygh\Addons\Synchro\Logging */
+    protected $logging;
 
     /**
      * @var \Tygh\Lock\Factory
@@ -75,6 +77,7 @@ class CronManager
 
     /**
      * @param \Tygh\Database\Connection                         $database          Database connection
+     * @param \Tygh\Addons\Synchro\Logging                      $logging           Synchro journal service
      * @param \Tygh\Lock\Factory                                $lock_factory      Lock factory
      * @param string                                            $root_directory    Store root directory
      * @param string                                            $admin_index       Administration entry point
@@ -84,6 +87,7 @@ class CronManager
      */
     public function __construct(
         Connection $database,
+        Logging $logging,
         Factory $lock_factory,
         $root_directory,
         $admin_index,
@@ -92,6 +96,7 @@ class CronManager
         $php_binary
     ) {
         $this->database = $database;
+        $this->logging = $logging;
         $this->lock_factory = $lock_factory;
         $this->root_directory = rtrim($root_directory, '/');
         $this->admin_index = $admin_index;
@@ -410,8 +415,7 @@ class CronManager
             exec($command, $output, $exit_code);
             $execution_time = time() - $start_time;
 
-            fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_LAUNCH, [
-                'script'         => $script['script'],
+            $this->logging->info((string) $script['script'], __('synchro.task_execution_finished'), [
                 'execution_time' => $execution_time,
                 'output'         => $output,
                 'exit_code'      => $exit_code,
@@ -613,11 +617,11 @@ class CronManager
             ['inner_status' => $inner_status],
             $script['script_id']
         );
-        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-            'script' => $script['script'],
-            'error'  => __('synchro.script_is_running_more_than_one_day')
-                . ' ' . __('synchro.inner_status_has_been_updated'),
-        ]);
+        $this->logging->error(
+            (string) $script['script'],
+            __('synchro.script_is_running_more_than_one_day')
+            . ' ' . __('synchro.inner_status_has_been_updated')
+        );
 
         return false;
     }
@@ -944,14 +948,14 @@ class CronManager
      */
     private function logPostProcessError($dispatch, $import_id, $reason)
     {
-        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-            'script' => $dispatch,
-            'error'  => __('synchro.post_process_not_queued', [
+        $this->logging->error(
+            $dispatch,
+            __('synchro.post_process_not_queued', [
                 '[dispatch]'  => $dispatch,
                 '[import_id]' => $import_id,
                 '[reason]'    => $reason,
-            ]),
-        ]);
+            ])
+        );
     }
 
     /**
@@ -988,10 +992,7 @@ class CronManager
      */
     protected function logAlreadyRunningError(array $script)
     {
-        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-            'script' => $script['script'],
-            'error'  => __('synchro.script_is_already_running'),
-        ]);
+        $this->logging->error((string) $script['script'], __('synchro.script_is_already_running'));
     }
 
     /**

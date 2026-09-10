@@ -2,13 +2,6 @@
 
 namespace Tygh\Addons\Synchro;
 
-function fn_log_event($type, $action, array $data)
-{
-    if (isset($GLOBALS['synchro_cron_log_event'])) {
-        call_user_func($GLOBALS['synchro_cron_log_event'], $type, $action, $data);
-    }
-}
-
 function __($language_variable, array $params = [])
 {
     return $language_variable . json_encode($params);
@@ -22,6 +15,7 @@ defined('DESCR_SL') or define('DESCR_SL', 'en');
 
 use Tygh\Addons\Synchro\CronManager;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
+use Tygh\Addons\Synchro\Logging;
 use Tygh\Database\Connection;
 use Tygh\Lock\Factory;
 use Tygh\Lock\Lock;
@@ -29,13 +23,6 @@ use Tygh\Tests\Unit\ATestCase;
 
 class CronManagerTest extends ATestCase
 {
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        unset($GLOBALS['synchro_cron_log_event']);
-    }
-
     public function testUnregisteredScriptCannotBeSaved()
     {
         $database = $this->createDatabase();
@@ -329,13 +316,21 @@ class CronManagerTest extends ATestCase
             ->method('getRow')
             ->with('SELECT post_process FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15)
             ->willReturn(['post_process' => 'synchro_import.apply_products']);
-        $logged_error = '';
-        $GLOBALS['synchro_cron_log_event'] = static function ($type, $action, array $data) use (&$logged_error) {
-            $logged_error = $data['error'];
-        };
+        $logging = $this->createMock(Logging::class);
+        $logging->expects($this->once())
+            ->method('error')
+            ->with(
+                'synchro_import.apply_products',
+                $this->stringContains('partial_success')
+            );
 
-        $this->assertFalse($this->createManager($database)->queuePostProcess(15, 10, 'full', 'partial_success'));
-        $this->assertStringContainsString('partial_success', $logged_error);
+        $this->assertFalse($this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            null,
+            $logging
+        )->queuePostProcess(15, 10, 'full', 'partial_success'));
     }
 
     public function testProgressStatusCanBeUpdated()
@@ -1007,6 +1002,7 @@ class CronManagerTest extends ATestCase
      * @param \Tygh\Database\Connection $database     Database connection
      * @param \Tygh\Lock\Factory|null    $lock_factory Lock factory
      * @param string                      $php_binary   PHP CLI binary
+     * @param \Tygh\Addons\Synchro\Logging|null $logging Logging service
      *
      * @return \Tygh\Addons\Synchro\CronManager
      */
@@ -1014,7 +1010,8 @@ class CronManagerTest extends ATestCase
         Connection $database,
         Factory $lock_factory = null,
         $php_binary = '/usr/bin/php',
-        array $available_scripts = null
+        array $available_scripts = null,
+        Logging $logging = null
     )
     {
         if ($lock_factory === null) {
@@ -1022,9 +1019,13 @@ class CronManagerTest extends ATestCase
                 ->disableOriginalConstructor()
                 ->getMock();
         }
+        if ($logging === null) {
+            $logging = $this->createMock(Logging::class);
+        }
 
-        return new CronManager(
+        $arguments = [
             $database,
+            $logging,
             $lock_factory,
             '/store',
             'admin.php',
@@ -1035,6 +1036,8 @@ class CronManagerTest extends ATestCase
                 ],
             ],
             $php_binary
-        );
+        ];
+
+        return new CronManager(...$arguments);
     }
 }

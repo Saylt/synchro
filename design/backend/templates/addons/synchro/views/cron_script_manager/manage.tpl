@@ -198,12 +198,22 @@
 	}
 {/capture}
 
+{capture name="buttons"}
+    {include
+        file="buttons/button.tpl"
+        but_href="synchro_logs.manage"
+        but_text=__("synchro.logs")
+        but_role="action"
+    }
+{/capture}
+
 {/capture}
 {include
 	file="common/mainbox.tpl"
 	title=__("synchro.cron_script_manager")
 	content=$smarty.capture.mainbox
-	title_extra=$smarty.capture.title_extra
-	tools=$smarty.capture.tools
-	sidebar=$smarty.capture.sidebar
+    title_extra=$smarty.capture.title_extra
+    tools=$smarty.capture.tools
+    sidebar=$smarty.capture.sidebar
+    buttons=$smarty.capture.buttons
 }

@@ -16,6 +16,14 @@ msgctxt "SettingsOptions::synchro::launch_handler"
 msgid "Run cron"
 msgstr "Run cron"
 
+msgctxt "SettingsOptions::synchro::log_cleanup_days"
+msgid "Days before a log entry is removed"
+msgstr "Days before a log entry is removed"
+
+msgctxt "SettingsTooltips::synchro::log_cleanup_days"
+msgid "Set to 0 to disable automatic log cleanup."
+msgstr "Set to 0 to disable automatic log cleanup."
+
 msgctxt "Languages::synchro.cron_script_manager"
 msgid "Cron script manager"
 msgstr "Cron script manager"
@@ -136,21 +144,41 @@ msgctxt "Languages::synchro.inner_status_has_been_updated"
 msgid "Inner status has been updated."
 msgstr "Inner status has been updated."
 
-msgctxt "Languages::synchro.log_type_crons_manager"
-msgid "Cron script manager"
-msgstr "Cron script manager"
+msgctxt "Languages::synchro.logs"
+msgid "Synchro log"
+msgstr "Synchro log"
 
-msgctxt "Languages::synchro.log_action_launch"
-msgid "Launch"
-msgstr "Launch"
+msgctxt "Languages::synchro.log_level"
+msgid "Level"
+msgstr "Level"
 
-msgctxt "Languages::synchro.log_action_errors"
-msgid "Errors"
-msgstr "Errors"
+msgctxt "Languages::synchro.log_level_info"
+msgid "Information"
+msgstr "Information"
 
-msgctxt "Languages::synchro.execution_time"
-msgid "Execution time"
-msgstr "Execution time"
+msgctxt "Languages::synchro.log_level_warning"
+msgid "Warning"
+msgstr "Warning"
+
+msgctxt "Languages::synchro.log_level_error"
+msgid "Error"
+msgstr "Error"
+
+msgctxt "Languages::synchro.log_source"
+msgid "Source"
+msgstr "Source"
+
+msgctxt "Languages::synchro.log_message"
+msgid "Message"
+msgstr "Message"
+
+msgctxt "Languages::synchro.log_context"
+msgid "Details"
+msgstr "Details"
+
+msgctxt "Languages::synchro.task_execution_finished"
+msgid "Task execution finished"
+msgstr "Task execution finished"
 
 msgctxt "Languages::synchro.task_has_been_launched"
 msgid "Task has been launched in background"

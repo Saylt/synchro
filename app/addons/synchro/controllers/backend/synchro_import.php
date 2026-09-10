@@ -2,7 +2,6 @@
 
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Application\ProductApplicationManager;
-use Tygh\Addons\Synchro\Enum\Logging;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Addons\Synchro\ServiceProvider;
@@ -13,6 +12,7 @@ defined('BOOTSTRAP') or die('Access denied');
 $import_repository = ServiceProvider::getImportEntityRepository();
 $cron_manager = ServiceProvider::getCronManager();
 $import_process_manager = ServiceProvider::getImportProcessManager();
+$logging = ServiceProvider::getLogging();
 $cron_script_id = isset($_REQUEST['cron_script_id']) && is_scalar($_REQUEST['cron_script_id'])
     ? (int) $_REQUEST['cron_script_id']
     : 0;
@@ -20,12 +20,7 @@ $company_id = fn_get_runtime_company_id();
 $source_import_id = isset($_REQUEST['import_id']) && is_scalar($_REQUEST['import_id'])
     ? (int) $_REQUEST['import_id']
     : 0;
-$log_exception = static function (Throwable $exception) use ($mode) {
-    fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-        'script' => 'synchro_import.' . $mode,
-        'error'  => $exception->getMessage(),
-    ]);
-};
+$log_source = 'synchro_import.' . $mode;
 
 if ($mode === 'apply_categories') {
     if (!$source_import_id) {
@@ -35,7 +30,7 @@ if ($mode === 'apply_categories') {
     try {
         ServiceProvider::getCategoryApplicationManager()->apply($source_import_id, $cron_script_id);
     } catch (TaskInterruptedException $exception) {
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
@@ -55,7 +50,7 @@ if ($mode === 'apply_products') {
             $cron_script_id
         );
     } catch (TaskInterruptedException $exception) {
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
@@ -75,7 +70,7 @@ if ($mode === 'apply_test_products') {
             $cron_script_id
         );
     } catch (TaskInterruptedException $exception) {
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
@@ -95,7 +90,7 @@ if ($mode === 'actualize_products') {
             $cron_script_id
         );
     } catch (TaskInterruptedException $exception) {
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
@@ -133,7 +128,7 @@ if ($mode === 'products') {
         $import_process_manager->dispatchPending($parent_import_id);
         $import_process_manager->reconcileParent($parent_import_id);
     } catch (TaskInterruptedException $exception) {
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     }
@@ -200,12 +195,12 @@ if ($mode === 'product_process') {
         $import_process_manager->completeProcess($import_id);
     } catch (TaskInterruptedException $exception) {
         $import_process_manager->cancelProcess($import_id);
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
         $import_process_manager->failProcess($import_id, $exception->getMessage());
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         throw $exception;
     }
@@ -241,12 +236,12 @@ if ($mode === 'categories') {
         }
     } catch (TaskInterruptedException $exception) {
         $import_repository->failImport($import_id);
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
         $import_repository->failImport($import_id);
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         throw $exception;
     }
@@ -274,12 +269,12 @@ if ($mode === 'manufacturers') {
         $import_repository->completeImport($import_id);
     } catch (TaskInterruptedException $exception) {
         $import_repository->failImport($import_id);
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
         $import_repository->failImport($import_id);
-        $log_exception($exception);
+        $logging->error($log_source, $exception->getMessage());
 
         throw $exception;
     }

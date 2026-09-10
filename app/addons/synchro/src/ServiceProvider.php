@@ -16,7 +16,6 @@ use Tygh\Addons\Synchro\Convertors\ProductConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductFeatureConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductFeatureVariantConvertor;
 use Tygh\Addons\Synchro\Convertors\WarehouseConvertor;
-use Tygh\Addons\Synchro\HookHandlers\LoggingHookHandler;
 use Tygh\Addons\Synchro\Importers\CategoryImporter;
 use Tygh\Addons\Synchro\Importers\ImageImporter;
 use Tygh\Addons\Synchro\Importers\ProductImporter;
@@ -47,11 +46,16 @@ class ServiceProvider implements ServiceProviderInterface
             return new ApiClient((string) Registry::get('addons.synchro.api_key'));
         };
 
+        $app['addons.synchro.logging'] = static function (Container $app) {
+            return new Logging($app['db']);
+        };
+
         $app['addons.synchro.cron_manager'] = static function (Container $app) {
             $php_binary_finder = new PhpExecutableFinder();
 
             return new CronManager(
                 $app['db'],
+                $app['addons.synchro.logging'],
                 $app['lock.factory'],
                 (string) Registry::get('config.dir.root'),
                 (string) Registry::get('config.admin_index'),
@@ -78,10 +82,6 @@ class ServiceProvider implements ServiceProviderInterface
                 (string) Registry::get('settings.Security.cron_password'),
                 $php_binary_finder->find() ?: 'php'
             );
-        };
-
-        $app['addons.synchro.hook_handlers.logging'] = static function () {
-            return new LoggingHookHandler();
         };
 
         $app['addons.synchro.repository.import_entity'] = static function (Container $app) {
@@ -125,7 +125,8 @@ class ServiceProvider implements ServiceProviderInterface
                 $app['addons.synchro.repository.product_feature_mapping'],
                 $app['addons.synchro.importers.warehouse'],
                 $app['addons.synchro.importers.product_stock'],
-                $app['addons.synchro.importers.image']
+                $app['addons.synchro.importers.image'],
+                $app['addons.synchro.logging']
             );
         };
 
@@ -133,7 +134,8 @@ class ServiceProvider implements ServiceProviderInterface
             return new CategoryImporter(
                 $app['db'],
                 $app['addons.synchro.repository.import_entity_map'],
-                $app['addons.synchro.importers.image']
+                $app['addons.synchro.importers.image'],
+                $app['addons.synchro.logging']
             );
         };
 
@@ -141,7 +143,8 @@ class ServiceProvider implements ServiceProviderInterface
             return new ProductFeatureImporter(
                 $app['db'],
                 $app['addons.synchro.repository.product_feature_mapping'],
-                $app['addons.synchro.repository.import_entity_map']
+                $app['addons.synchro.repository.import_entity_map'],
+                $app['addons.synchro.logging']
             );
         };
 
@@ -232,6 +235,14 @@ class ServiceProvider implements ServiceProviderInterface
     public static function getCronManager()
     {
         return Tygh::$app['addons.synchro.cron_manager'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\Logging
+     */
+    public static function getLogging()
+    {
+        return Tygh::$app['addons.synchro.logging'];
     }
 
     /**

@@ -4,7 +4,7 @@ namespace Tygh\Addons\Synchro\Importers;
 
 use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
-use Tygh\Addons\Synchro\Enum\Logging;
+use Tygh\Addons\Synchro\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Database\Connection;
@@ -15,6 +15,8 @@ use Tygh\Enum\ProductFeatures;
  */
 class ProductFeatureImporter
 {
+    const LOG_SOURCE = 'synchro_import.features';
+
     /** @var \Tygh\Database\Connection */
     private $database;
 
@@ -24,19 +26,25 @@ class ProductFeatureImporter
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository */
     private $entity_mapping_repository;
 
+    /** @var \Tygh\Addons\Synchro\Logging */
+    private $logging;
+
     /**
      * @param \Tygh\Database\Connection                                       $database                   Database connection
      * @param \Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository $feature_mapping_repository Feature mapping repository
      * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository       $entity_mapping_repository  Entity mapping repository
+     * @param \Tygh\Addons\Synchro\Logging|null                               $logging                    Synchro journal service
      */
     public function __construct(
         Connection $database,
         ProductFeatureMappingRepository $feature_mapping_repository,
-        ImportEntityMapRepository $entity_mapping_repository
+        ImportEntityMapRepository $entity_mapping_repository,
+        Logging $logging = null
     ) {
         $this->database = $database;
         $this->feature_mapping_repository = $feature_mapping_repository;
         $this->entity_mapping_repository = $entity_mapping_repository;
+        $this->logging = $logging ?: new Logging($database);
     }
 
     /**
@@ -92,7 +100,7 @@ class ProductFeatureImporter
             }
 
             if (!isset($target_features[$target_feature_id])) {
-                $this->logError(__('synchro.product_feature_import_error.target_not_found', [
+                $this->logging->error(self::LOG_SOURCE, __('synchro.product_feature_import_error.target_not_found', [
                     '[external_id]' => $external_feature_id,
                     '[feature_id]'  => $target_feature_id,
                 ]));
@@ -107,7 +115,7 @@ class ProductFeatureImporter
             );
 
             if (!$is_supported) {
-                $this->logError(__('synchro.product_feature_import_error.unsupported_target', [
+                $this->logging->error(self::LOG_SOURCE, __('synchro.product_feature_import_error.unsupported_target', [
                     '[external_id]' => $external_feature_id,
                     '[feature_id]'  => $target_feature_id,
                 ]));
@@ -122,7 +130,7 @@ class ProductFeatureImporter
                     && !is_numeric($variant->value)
                 ) {
                     $is_feature_prepared[$external_feature_id] = false;
-                    $this->logError(__('synchro.product_feature_import_error.non_numeric_variant', [
+                    $this->logging->error(self::LOG_SOURCE, __('synchro.product_feature_import_error.non_numeric_variant', [
                         '[external_id]' => $external_feature_id,
                         '[value]'       => (string) $variant->value,
                     ]));
@@ -184,7 +192,7 @@ class ProductFeatureImporter
                         foreach ($variant['sources'] as $external_feature_id) {
                             $is_feature_prepared[$external_feature_id] = false;
                         }
-                        $this->logError(__('synchro.product_feature_import_error.variant_creation_failed', [
+                        $this->logging->error(self::LOG_SOURCE, __('synchro.product_feature_import_error.variant_creation_failed', [
                             '[feature_id]' => $target_feature_id,
                             '[value]'      => $variant['value'],
                         ]));
@@ -327,20 +335,5 @@ class ProductFeatureImporter
         }
 
         return mb_strtolower($value, 'UTF-8');
-    }
-
-    /**
-     * Writes a feature preparation error to the Synchro log.
-     *
-     * @param string $error Error message
-     *
-     * @return void
-     */
-    private function logError($error)
-    {
-        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-            'script' => 'synchro_import.features',
-            'error'  => $error,
-        ]);
     }
 }

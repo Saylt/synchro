@@ -5,7 +5,7 @@ namespace Tygh\Addons\Synchro\Importers;
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
-use Tygh\Addons\Synchro\Enum\Logging;
+use Tygh\Addons\Synchro\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Common\OperationResult;
@@ -17,6 +17,8 @@ use Tygh\Enum\ObjectStatuses;
  */
 class ProductImporter
 {
+    const LOG_SOURCE = 'synchro_import.products';
+
     /** @var \Tygh\Database\Connection */
     private $database;
 
@@ -35,6 +37,9 @@ class ProductImporter
     /** @var \Tygh\Addons\Synchro\Importers\ImageImporter */
     private $image_importer;
 
+    /** @var \Tygh\Addons\Synchro\Logging */
+    private $logging;
+
     /**
      * Initializes the product importer.
      *
@@ -44,6 +49,7 @@ class ProductImporter
      * @param \Tygh\Addons\Synchro\Importers\WarehouseImporter                $warehouse_importer         Warehouse importer
      * @param \Tygh\Addons\Synchro\Importers\ProductStockUpdater              $stock_updater              Stock updater
      * @param \Tygh\Addons\Synchro\Importers\ImageImporter                    $image_importer             Image importer
+     * @param \Tygh\Addons\Synchro\Logging|null                               $logging                    Synchro journal service
      */
     public function __construct(
         Connection $database,
@@ -51,7 +57,8 @@ class ProductImporter
         ProductFeatureMappingRepository $feature_mapping_repository,
         WarehouseImporter $warehouse_importer,
         ProductStockUpdater $stock_updater,
-        ImageImporter $image_importer
+        ImageImporter $image_importer,
+        Logging $logging = null
     ) {
         $this->database = $database;
         $this->mapping_repository = $mapping_repository;
@@ -59,6 +66,7 @@ class ProductImporter
         $this->warehouse_importer = $warehouse_importer;
         $this->stock_updater = $stock_updater;
         $this->image_importer = $image_importer;
+        $this->logging = $logging ?: new Logging($database);
     }
 
     /**
@@ -260,7 +268,8 @@ class ProductImporter
         $product_id = $this->findMappedProductId($mapping, $existing_product_ids);
 
         if ($actualize && !$product_id) {
-            $this->logError(
+            $this->logging->error(
+                self::LOG_SOURCE,
                 __('synchro.product_import_error.product_not_found', ['[external_id]' => $external_id])
             );
 
@@ -269,7 +278,8 @@ class ProductImporter
 
         $category_ids = $actualize ? [] : $this->resolveProductCategoryIds($product, $category_mappings);
         if (!$actualize && !$category_ids) {
-            $this->logError(
+            $this->logging->error(
+                self::LOG_SOURCE,
                 __('synchro.product_import_error.categories_not_resolved', ['[external_id]' => $external_id])
             );
 
@@ -278,7 +288,7 @@ class ProductImporter
 
         $warehouse_amounts = $this->importWarehouses($product);
         if ($warehouse_amounts === false) {
-            $this->logError(__('synchro.product_import_error.skipped_warehouse_not_resolved', [
+            $this->logging->error(self::LOG_SOURCE, __('synchro.product_import_error.skipped_warehouse_not_resolved', [
                 '[external_id]' => $external_id,
             ]));
 
@@ -365,7 +375,7 @@ class ProductImporter
                 ? (int) $category_mappings[$external_category_id]['local_id']
                 : 0;
             if (!$category_id) {
-                $this->logError(__('synchro.product_import_error.category_mapping_not_found', [
+                $this->logging->error(self::LOG_SOURCE, __('synchro.product_import_error.category_mapping_not_found', [
                     '[external_id]'          => $product->getEntityId(),
                     '[category_external_id]' => $external_category_id,
                 ]));
@@ -420,7 +430,7 @@ class ProductImporter
         foreach ($product->warehouses as $warehouse) {
             $warehouse_id = $this->warehouse_importer->import($warehouse);
             if (!$warehouse_id) {
-                $this->logError(__('synchro.product_import_error.warehouse_not_resolved', [
+                $this->logging->error(self::LOG_SOURCE, __('synchro.product_import_error.warehouse_not_resolved', [
                     '[external_id]' => $product->getEntityId(),
                     '[warehouse]'   => $warehouse->getEntityId(),
                 ]));
@@ -477,7 +487,7 @@ class ProductImporter
 
         $product_id = (int) fn_update_product($product_data, $product_id);
         if (!$product_id) {
-            $this->logError(__('synchro.product_import_error.update_failed', [
+            $this->logging->error(self::LOG_SOURCE, __('synchro.product_import_error.update_failed', [
                 '[external_id]' => $product->getEntityId(),
             ]));
 
@@ -513,7 +523,7 @@ class ProductImporter
             $external_feature_id = $feature->getEntityId();
 
             if (!array_key_exists($external_feature_id, $feature_mappings)) {
-                $this->logError(__('synchro.product_import_error.feature_mapping_not_found', [
+                $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.feature_mapping_not_found', [
                     '[external_id]'         => $product->getEntityId(),
                     '[feature_external_id]' => $external_feature_id,
                 ]));
@@ -539,7 +549,7 @@ class ProductImporter
                 if (isset($values[$feature_id]) && $values[$feature_id] !== $variant_id) {
                     unset($values[$feature_id]);
                     $conflicted_features[$feature_id] = true;
-                    $this->logError(__('synchro.product_import_error.feature_conflict', [
+                    $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.feature_conflict', [
                         '[external_id]' => $product->getEntityId(),
                         '[feature_id]'  => $feature_id,
                     ]));
@@ -597,25 +607,10 @@ class ProductImporter
         $errors = $result->getErrors();
 
         foreach ($errors as $error) {
-            $this->logError(__('synchro.product_import_error.image_sync_failed', [
+            $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.image_sync_failed', [
                 '[external_id]' => $external_id,
                 '[error]'       => $error,
             ]));
         }
-    }
-
-    /**
-     * Writes a product import error to the Synchro log.
-     *
-     * @param string $error Error message
-     *
-     * @return void
-     */
-    private function logError($error)
-    {
-        fn_log_event(Logging::LOG_TYPE_CRON_MANAGER, Logging::ACTION_ERRORS, [
-            'script' => 'synchro_import.products',
-            'error'  => $error,
-        ]);
     }
 }
