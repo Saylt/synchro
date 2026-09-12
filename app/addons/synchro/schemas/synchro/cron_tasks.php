@@ -41,6 +41,10 @@ return [
         'name'   => 'synchro.actualize_products',
         'hidden' => true,
     ],
+    'synchro_import.archive_products' => [
+        'name'   => 'synchro.archive_products',
+        'hidden' => true,
+    ],
     'synchro_import.product_application_process' => [
         'name'   => 'synchro.product_application_process',
         'hidden' => true,

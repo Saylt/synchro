@@ -252,6 +252,18 @@ msgctxt "Languages::synchro.exception.product_archiving_mark_not_stored"
 msgid "Product archiving mark cannot be stored"
 msgstr "Product archiving mark cannot be stored"
 
+msgctxt "Languages::synchro.exception.product_archiving_failed"
+msgid "Product could not be moved to the archive category"
+msgstr "Product could not be moved to the archive category"
+
+msgctxt "Languages::synchro.exception.product_archiving_mark_not_cleared"
+msgid "Product archiving mark cannot be cleared"
+msgstr "Product archiving mark cannot be cleared"
+
+msgctxt "Languages::synchro.exception.archive_category_not_created"
+msgid "Archive category could not be created"
+msgstr "Archive category could not be created"
+
 msgctxt "Languages::synchro.exception.product_application_process_required"
 msgid "A product application process with staging data is required"
 msgstr "A product application process with staging data is required"
@@ -803,6 +815,14 @@ msgstr "The image for category with external ID [external_id] could not be synch
 msgctxt "Languages::synchro.apply_products"
 msgid "Import products into the catalog"
 msgstr "Import products into the catalog"
+
+msgctxt "Languages::synchro.archive_products"
+msgid "Archive products missing from the source"
+msgstr "Archive products missing from the source"
+
+msgctxt "Languages::synchro.product_archiving_not_queued"
+msgid "Product archiving task was not queued because the product application did not complete successfully"
+msgstr "Product archiving task was not queued because the product application did not complete successfully"
 
 msgctxt "Languages::synchro.apply_categories"
 msgid "Import categories into the catalog"

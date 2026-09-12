@@ -81,6 +81,20 @@ class ApiClient
     }
 
     /**
+     * Gets data for one product by its external identifier.
+     *
+     * @param string|int $external_id External product identifier
+     *
+     * @return array<array-key, array|bool|float|int|string|null>
+     *
+     * @throws \RuntimeException When the API request or response is invalid.
+     */
+    public function getProductData($external_id)
+    {
+        return $this->getData('products', ['id' => (string) $external_id]);
+    }
+
+    /**
      * @return string
      */
     private function getApiKey()

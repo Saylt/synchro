@@ -854,10 +854,11 @@ class CronManager
      * @param int    $parent_import_id Parent import identifier
      * @param string $source_type      Import source type
      * @param string $result_status    Import result status
+     * @param string $target_dispatch  Explicit target dispatch
      *
      * @return bool
      */
-    public function queuePostProcess($script_id, $parent_import_id, $source_type, $result_status)
+    public function queuePostProcess($script_id, $parent_import_id, $source_type, $result_status, $target_dispatch = '')
     {
         $source_script = $this->database->getRow(
             'SELECT post_process, entities_per_portion, max_parallel_processes'
@@ -874,11 +875,11 @@ class CronManager
 
             return false;
         }
-        $target_dispatch = isset($source_script['post_process'])
-            ? (string) $source_script['post_process']
-            : '';
         if ($target_dispatch === '') {
-            return true;
+            if (!isset($source_script['post_process'])) {
+                return true;
+            }
+            $target_dispatch = $source_script['post_process'];
         }
 
         if (!in_array($result_status, ['completed', 'partial_success'], true)) {

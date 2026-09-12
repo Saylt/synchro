@@ -90,6 +90,49 @@ class ImportEntityMapRepository
     }
 
     /**
+     * Finds mapped entities that are absent from the latest complete snapshot.
+     *
+     * @param int    $company_id  Company identifier
+     * @param string $entity_type Entity type
+     *
+     * @return array<string, array<string, int|string>> Mappings indexed by external identifier
+     */
+    public function findPendingArchiving($company_id, $entity_type)
+    {
+        return $this->database->getHash(
+            'SELECT * FROM ?:?p WHERE company_id = ?i AND entity_type = ?s'
+            . ' AND needs_archiving = ?s AND local_id > ?i',
+            'external_id',
+            self::TABLE_NAME,
+            $company_id,
+            $entity_type,
+            'Y',
+            0
+        );
+    }
+
+    /**
+     * Clears the archiving mark after a mapped entity has been archived.
+     *
+     * @param int    $company_id  Company identifier
+     * @param string $entity_type Entity type
+     * @param string $external_id External entity identifier
+     *
+     * @return bool
+     */
+    public function clearArchivingMark($company_id, $entity_type, $external_id)
+    {
+        return (bool) $this->database->query(
+            'UPDATE ?:?p SET needs_archiving = ?s WHERE company_id = ?i AND entity_type = ?s AND external_id = ?s',
+            self::TABLE_NAME,
+            'N',
+            $company_id,
+            $entity_type,
+            $external_id
+        );
+    }
+
+    /**
      * Creates a mapping or updates its mutable data without changing update timestamps.
      * Company, entity type and external ID identify the mapping and therefore are not updated on conflict.
      *

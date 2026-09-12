@@ -47,7 +47,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ? $_REQUEST['script_data']
             : [];
         /** @var array<string, array<array-key, string>|int|string|null> $script_data */
-        if (!$cron_manager->updateScriptData($script_data, $request_script_id)) {
+        $current_script = $request_script_id ? $cron_manager->getCronScriptData($request_script_id) : [];
+        if (
+            ($current_script && $current_script['script'] === 'synchro_import.archive_products')
+            || !$cron_manager->updateScriptData($script_data, $request_script_id)
+        ) {
             fn_set_notification('E', __('error'), __('synchro.script_cannot_be_saved'));
         }
     }
@@ -55,7 +59,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($mode === 'm_delete' && isset($_REQUEST['script_ids']) && is_array($_REQUEST['script_ids'])) {
         foreach ($_REQUEST['script_ids'] as $script_id) {
             if (is_scalar($script_id)) {
-                $cron_manager->deleteCronScript((int) $script_id);
+                $script = $cron_manager->getCronScriptData((int) $script_id);
+                if ($script && ($script['script'] !== 'synchro_import.archive_products' || $script['inner_status'] === 'cancelled')) {
+                    $cron_manager->deleteCronScript((int) $script_id);
+                }
             }
         }
     }
@@ -83,13 +90,16 @@ if ($mode === 'manage') {
         $view->assign('script_data', $cron_manager->getCronScriptData($request_script_id));
     }
 } elseif ($mode === 'delete') {
-    $cron_manager->deleteCronScript($request_script_id);
+    $script = $cron_manager->getCronScriptData($request_script_id);
+    if ($script && ($script['script'] !== 'synchro_import.archive_products' || $script['inner_status'] === 'cancelled')) {
+        $cron_manager->deleteCronScript($request_script_id);
+    }
 
     return [CONTROLLER_STATUS_REDIRECT, 'cron_script_manager.manage'];
 } elseif ($mode === 'launch') {
     if ($request_script_id) {
         $script = $cron_manager->getCronScriptData($request_script_id);
-        if ($script) {
+        if ($script && ($script['script'] !== 'synchro_import.archive_products' || $script['inner_status'] === 'cancelled')) {
             if ($cron_manager->launchCronScriptInBackground($script, true)) {
                 fn_set_notification('N', __('notice'), __('synchro.task_has_been_launched'));
             } else {

@@ -99,6 +99,23 @@ class ServiceProvider implements ServiceProviderInterface
             return new ImportEntityMapRepository($app['db']);
         };
 
+        $app['addons.synchro.product_archiver'] = static function (Container $app) {
+            return new ProductArchiver(
+                $app['db'],
+                $app['addons.synchro.api.client'],
+                $app['addons.synchro.repository.import_entity_map'],
+                $app['addons.synchro.cron_manager']
+            );
+        };
+
+        $app['addons.synchro.product_archiving_manager'] = static function (Container $app) {
+            return new ProductArchivingManager(
+                $app['addons.synchro.repository.import_entity'],
+                $app['addons.synchro.cron_manager'],
+                $app['addons.synchro.logging']
+            );
+        };
+
         $app['addons.synchro.repository.product_feature_mapping'] = static function (Container $app) {
             return new ProductFeatureMappingRepository($app['db']);
         };
@@ -271,6 +288,22 @@ class ServiceProvider implements ServiceProviderInterface
     public static function getApiClient()
     {
         return Tygh::$app['addons.synchro.api.client'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\ProductArchiver
+     */
+    public static function getProductArchiver()
+    {
+        return Tygh::$app['addons.synchro.product_archiver'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\ProductArchivingManager
+     */
+    public static function getProductArchivingManager()
+    {
+        return Tygh::$app['addons.synchro.product_archiving_manager'];
     }
 
     /**

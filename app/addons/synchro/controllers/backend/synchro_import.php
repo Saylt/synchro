@@ -77,6 +77,36 @@ if ($mode === 'apply_manufacturers') {
     return [CONTROLLER_STATUS_NO_CONTENT];
 }
 
+if ($mode === 'archive_products') {
+    $script = $cron_script_id ? $cron_manager->getCronScriptData($cron_script_id) : [];
+    $import = $source_import_id ? $import_repository->findImport($source_import_id) : [];
+    if (
+        !$script
+        || (int) $script['runtime_import_id'] !== $source_import_id
+        || !$import
+        || $import['entity_type'] !== ImportDataCommand::ENTITY_PRODUCTS
+        || $import['source_type'] !== ImportEntityRepository::SOURCE_TYPE_FULL
+        || $import['status'] !== ImportEntityRepository::STATUS_COMPLETED
+    ) {
+        return [CONTROLLER_STATUS_NO_PAGE];
+    }
+
+    Registry::set('runtime.company_id', $import['company_id']);
+    try {
+        ServiceProvider::getProductArchiver()->archive($import['company_id'], $cron_script_id);
+    } catch (TaskInterruptedException $exception) {
+        $logging->error($log_source, $exception->getMessage());
+
+        return [CONTROLLER_STATUS_NO_CONTENT];
+    } catch (Throwable $exception) {
+        $logging->error($log_source, $exception->getMessage());
+
+        throw $exception;
+    }
+
+    return [CONTROLLER_STATUS_NO_CONTENT];
+}
+
 $product_worker_modes = [
     'synchro_import.apply_products'      => ProductApplicationManager::MODE_FULL,
     'synchro_import.apply_test_products' => ProductApplicationManager::MODE_TEST,
@@ -138,6 +168,12 @@ if ($mode === 'product_application_process' || $mode === 'category_application_p
         }
         $import_process_manager->ensureProcessCanContinue($source_import_id);
         $import_process_manager->completeProcess($source_import_id);
+        if (
+            $mode === 'product_application_process'
+            && $script['script'] === 'synchro_import.apply_products'
+        ) {
+            ServiceProvider::getProductArchivingManager()->queueAfterApplication($process);
+        }
     } catch (TaskInterruptedException $exception) {
         $import_process_manager->cancelProcess($source_import_id);
         $logging->error($log_source, $exception->getMessage());

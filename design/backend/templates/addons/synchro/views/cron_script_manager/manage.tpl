@@ -30,9 +30,12 @@
 	<th>&nbsp;</th>
 </tr>
 {foreach $scripts as $s}
+{$is_product_archiving = $s.script === "synchro_import.archive_products"}
 <tr {cycle values="class=\"table-row\", "}>
 	<td class="center">
+		{if !$is_product_archiving}
    		<input type="checkbox" name="script_ids[]" value="{$s.script_id}" class="checkbox cm-item" />
+		{/if}
 	</td>
 	<td>
 		{if $s.dependency_level}
@@ -88,21 +91,33 @@
 	</td>
 	<td data-ca-synchro-progress-status="{$s.script_id}">{$s.progress_status|default:"—"}</td>
 	<td>
-		{include file="common/select_popup.tpl" id=$s.script_id status=$s.status object_id_name="script_id" table="synchro_cron_scripts"}
+		{if $is_product_archiving}
+			{__("status_`$s.status`")}
+		{else}
+			{include file="common/select_popup.tpl" id=$s.script_id status=$s.status object_id_name="script_id" table="synchro_cron_scripts"}
+		{/if}
 	</td>
 	<td class="nowrap">
 		{capture name="tools_items"}
-			{if $synchro_import_processes[$s.script_id] && $synchro_import_processes[$s.script_id].parent.status|in_array:["partial_success", "failed", "cancelled"]}
+			{if !$is_product_archiving && $synchro_import_processes[$s.script_id] && $synchro_import_processes[$s.script_id].parent.status|in_array:["partial_success", "failed", "cancelled"]}
 				<li><a href="{"cron_script_manager.retry_import?script_id=`$s.script_id`"|fn_url}">{__("synchro.retry_failed_processes")}</a></li>
 			{/if}
 			{if $s.inner_status|in_array:["queued", "in_progress", "waiting_children"]}
 				<li><a class="cm-confirm" href="{"cron_script_manager.interrupt?script_id=`$s.script_id`"|fn_url}">{__("synchro.interrupt")}</a></li>
-			{elseif $s.inner_status !== "stopping"}
+			{elseif $is_product_archiving && $s.inner_status === "cancelled"}
+				<li><a class="cm-confirm" href="{"cron_script_manager.launch?script_id=`$s.script_id`"|fn_url}">{__("resume")}</a></li>
+			{elseif !$is_product_archiving && $s.inner_status !== "stopping"}
 				<li><a class="cm-confirm" href="{"cron_script_manager.launch?script_id=`$s.script_id`"|fn_url}">{__("synchro.launch_now")}</a></li>
 			{/if}
-			<li><a class="cm-confirm" href="{"cron_script_manager.delete?script_id=`$s.script_id`"|fn_url}">{__("delete")}</a></li>
+			{if !$is_product_archiving || $s.inner_status === "cancelled"}
+				<li><a class="cm-confirm" href="{"cron_script_manager.delete?script_id=`$s.script_id`"|fn_url}">{__("delete")}</a></li>
+			{/if}
 		{/capture}
-		{include file="common/table_tools_list.tpl" prefix=$s.script_id tools_list=$smarty.capture.tools_items href="cron_script_manager.update?script_id=`$s.script_id`" popup=true act="edit" id="cron_script_`$s.script_id`" text="{__("editing_task")}: `$s.script`"}
+		{if $is_product_archiving}
+			{include file="common/table_tools_list.tpl" prefix=$s.script_id tools_list=$smarty.capture.tools_items href="" popup=true act="" id="cron_script_`$s.script_id`" text="`$s.script`"}
+		{else}
+			{include file="common/table_tools_list.tpl" prefix=$s.script_id tools_list=$smarty.capture.tools_items href="cron_script_manager.update?script_id=`$s.script_id`" popup=true act="edit" id="cron_script_`$s.script_id`" text="{__("editing_task")}: `$s.script`"}
+		{/if}
 	</td>
 </tr>
 {if $synchro_import_processes[$s.script_id]}
