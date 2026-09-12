@@ -47,13 +47,14 @@ class ProductFeatureMappingManager
     /**
      * Maps selected imported features to an existing local feature.
      *
-     * @param int                                               $company_id       Company identifier
-     * @param array<\Tygh\Addons\Synchro\Dto\ProductFeatureDto> $features         Imported features
-     * @param int                                               $local_feature_id Local feature identifier
+     * @param int                                               $company_id            Company identifier
+     * @param array<\Tygh\Addons\Synchro\Dto\ProductFeatureDto> $features              Imported features
+     * @param int                                               $local_feature_id      Local feature identifier
+     * @param array<string>|null                                $allowed_feature_types Local feature types allowed for this mapping
      *
      * @return \Tygh\Common\OperationResult
      */
-    public function map($company_id, array $features, $local_feature_id)
+    public function map($company_id, array $features, $local_feature_id, array $allowed_feature_types = null)
     {
         if (!$features) {
             return $this->failure('selection', __('synchro.feature_mapping_selection_required'));
@@ -66,11 +67,15 @@ class ProductFeatureMappingManager
             $company_id
         );
 
+        $allowed_feature_types = $allowed_feature_types ?: [
+            ProductFeatures::TEXT_SELECTBOX,
+            ProductFeatures::NUMBER_SELECTBOX,
+        ];
         if (
             !$local_feature
             || !in_array(
                 $local_feature['feature_type'],
-                [ProductFeatures::TEXT_SELECTBOX, ProductFeatures::NUMBER_SELECTBOX],
+                $allowed_feature_types,
                 true
             )
         ) {
@@ -94,15 +99,16 @@ class ProductFeatureMappingManager
     }
 
     /**
-     * Creates a text selectbox and maps selected imported features to it.
+     * Creates a local feature and maps selected imported features to it.
      *
-     * @param int                                               $company_id Company identifier
-     * @param array<\Tygh\Addons\Synchro\Dto\ProductFeatureDto> $features   Imported features
-     * @param string                                            $name       New feature name
+     * @param int                                               $company_id   Company identifier
+     * @param array<\Tygh\Addons\Synchro\Dto\ProductFeatureDto> $features     Imported features
+     * @param string                                            $name         New feature name
+     * @param string                                            $feature_type New local feature type
      *
      * @return \Tygh\Common\OperationResult
      */
-    public function createAndMap($company_id, array $features, $name)
+    public function createAndMap($company_id, array $features, $name, $feature_type = ProductFeatures::TEXT_SELECTBOX)
     {
         if (!$features) {
             return $this->failure('selection', __('synchro.feature_mapping_selection_required'));
@@ -116,7 +122,7 @@ class ProductFeatureMappingManager
         $local_feature_id = fn_update_product_feature([
             'company_id'      => $company_id,
             'status'          => ObjectStatuses::ACTIVE,
-            'feature_type'    => ProductFeatures::TEXT_SELECTBOX,
+            'feature_type'    => $feature_type,
             'description'     => $name,
             'internal_name'   => $name,
             'parent_id'       => 0,

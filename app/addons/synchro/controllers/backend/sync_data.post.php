@@ -2,6 +2,7 @@
 
 use Tygh\Addons\Synchro\ServiceProvider;
 use Tygh\Enum\ProductFeatures;
+use Tygh\Registry;
 
 defined('BOOTSTRAP') or die('Access denied');
 
@@ -12,6 +13,17 @@ if (
     && isset($_REQUEST['sync_provider_id'])
     && $_REQUEST['sync_provider_id'] === 'synchro'
 ) {
+    Registry::set('navigation.tabs', [
+        'features' => [
+            'title' => __('synchro.product_features'),
+            'js'    => true,
+        ],
+        'brands' => [
+            'title' => __('synchro.brands'),
+            'js'    => true,
+        ],
+    ]);
+
     $company_id = fn_get_runtime_company_id();
     list($import_id, $features) = ServiceProvider::getImportedProductFeatureReader()->readLatest($company_id);
     $external_feature_ids = [];
@@ -71,5 +83,30 @@ if (
             ProductFeatures::TEXT_SELECTBOX,
             ProductFeatures::NUMBER_SELECTBOX,
         ],
+        'synchro_brand_target_feature_types' => [ProductFeatures::EXTENDED],
+    ]);
+
+    $brand_feature = ServiceProvider::getImportedManufacturerReader()->createFeature();
+    $brand_mapping = ServiceProvider::getProductFeatureMappingRepository()->findByExternalIds(
+        $company_id,
+        [$brand_feature->getEntityId()]
+    );
+    $brand_local_feature = [];
+    $brand_feature_id = isset($brand_mapping[$brand_feature->getEntityId()])
+        ? (int) $brand_mapping[$brand_feature->getEntityId()]
+        : 0;
+    if ($brand_feature_id) {
+        $brand_local_feature = Tygh::$app['db']->getRow(
+            'SELECT features.feature_id, descriptions.description FROM ?:product_features AS features'
+            . ' LEFT JOIN ?:product_features_descriptions AS descriptions'
+            . ' ON descriptions.feature_id = features.feature_id AND descriptions.lang_code = ?s'
+            . ' WHERE features.feature_id = ?i',
+            CART_LANGUAGE,
+            $brand_feature_id
+        );
+    }
+    Tygh::$app['view']->assign([
+        'synchro_brand_local_feature_id' => $brand_feature_id,
+        'synchro_brand_local_feature'    => $brand_local_feature,
     ]);
 }

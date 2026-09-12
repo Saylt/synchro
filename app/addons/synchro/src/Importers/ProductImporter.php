@@ -4,6 +4,7 @@ namespace Tygh\Addons\Synchro\Importers;
 
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Dto\CategoryDto;
+use Tygh\Addons\Synchro\Dto\ManufacturerDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
@@ -181,6 +182,7 @@ class ProductImporter
     {
         $external_feature_ids = [];
         $external_variant_ids = [];
+        $external_manufacturer_ids = [];
 
         foreach ($products as $product) {
             foreach ($product->features as $feature) {
@@ -190,10 +192,30 @@ class ProductImporter
                     $external_variant_ids[] = $variant->getEntityId();
                 }
             }
+            if (!$product->manufacturer instanceof ManufacturerDto) {
+                continue;
+            }
+            $external_feature_ids[] = ManufacturerDto::ENTITY_TYPE;
+            $external_manufacturer_ids[] = $product->manufacturer->getEntityId();
         }
 
         if (!$external_feature_ids) {
             return [[], []];
+        }
+
+        $variant_mappings = $external_variant_ids
+            ? $this->mapping_repository->findByExternalIds(
+                $company_id,
+                ProductFeatureVariantDto::ENTITY_TYPE,
+                array_values(array_unique($external_variant_ids))
+            )
+            : [];
+        if ($external_manufacturer_ids) {
+            $variant_mappings += $this->mapping_repository->findByExternalIds(
+                $company_id,
+                ManufacturerDto::ENTITY_TYPE,
+                array_values(array_unique($external_manufacturer_ids))
+            );
         }
 
         return [
@@ -201,11 +223,7 @@ class ProductImporter
                 $company_id,
                 array_values(array_unique($external_feature_ids))
             ),
-            $this->mapping_repository->findByExternalIds(
-                $company_id,
-                ProductFeatureVariantDto::ENTITY_TYPE,
-                array_values(array_unique($external_variant_ids))
-            ),
+            $variant_mappings,
         ];
     }
 
@@ -560,7 +578,68 @@ class ProductImporter
             }
         }
 
+        $this->addManufacturerFeatureValue($product, $feature_mappings, $variant_mappings, $values);
+
         return $values;
+    }
+
+    /**
+     * Adds a resolved manufacturer variant as the configured local brand feature.
+     *
+     * @param \Tygh\Addons\Synchro\Dto\ProductDto      $product          Imported product
+     * @param array<string, int>                       $feature_mappings External-to-local feature mappings
+     * @param array<string, array<string, int|string>> $variant_mappings External-to-local variant mappings
+     * @param array<int, int>                          $values           Local feature values
+     *
+     * @return void
+     */
+    private function addManufacturerFeatureValue(
+        ProductDto $product,
+        array $feature_mappings,
+        array $variant_mappings,
+        array &$values
+    ) {
+        if (!$product->manufacturer instanceof ManufacturerDto) {
+            return;
+        }
+
+        if (!array_key_exists(ManufacturerDto::ENTITY_TYPE, $feature_mappings)) {
+            $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.brand_feature_mapping_not_found', [
+                '[external_id]' => $product->getEntityId(),
+            ]));
+
+            return;
+        }
+
+        $feature_id = $feature_mappings[ManufacturerDto::ENTITY_TYPE];
+        if (!$feature_id) {
+            return;
+        }
+
+        $manufacturer_id = $product->manufacturer->getEntityId();
+        $variant_id = isset($variant_mappings[$manufacturer_id]['local_id'])
+            ? (int) $variant_mappings[$manufacturer_id]['local_id']
+            : 0;
+        if (!$variant_id) {
+            $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.brand_variant_mapping_not_found', [
+                '[external_id]'     => $product->getEntityId(),
+                '[manufacturer_id]' => $manufacturer_id,
+            ]));
+
+            return;
+        }
+
+        if (isset($values[$feature_id]) && $values[$feature_id] !== $variant_id) {
+            unset($values[$feature_id]);
+            $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.feature_conflict', [
+                '[external_id]' => $product->getEntityId(),
+                '[feature_id]'  => $feature_id,
+            ]));
+
+            return;
+        }
+
+        $values[$feature_id] = $variant_id;
     }
 
     /**

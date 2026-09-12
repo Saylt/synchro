@@ -2,6 +2,7 @@
 
 namespace Tygh\Addons\Synchro\Importers;
 
+use Tygh\Addons\Synchro\Dto\ManufacturerDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Logging;
@@ -50,12 +51,13 @@ class ProductFeatureImporter
     /**
      * Creates or reuses local variants and maps every valid external variant to them.
      *
-     * @param array<\Tygh\Addons\Synchro\Dto\ProductFeatureDto> $features   Imported product features
-     * @param int                                               $company_id Company identifier
+     * @param array<\Tygh\Addons\Synchro\Dto\ProductFeatureDto> $features            Imported product features
+     * @param int                                               $company_id          Company identifier
+     * @param string                                            $variant_entity_type External variant entity type
      *
      * @return array<string, int> Prepared local feature IDs indexed by external feature ID
      */
-    public function import(array $features, $company_id)
+    public function import(array $features, $company_id, $variant_entity_type = ProductFeatureVariantDto::ENTITY_TYPE)
     {
         $features_by_id = [];
 
@@ -108,11 +110,19 @@ class ProductFeatureImporter
             }
 
             $feature_type = $target_features[$target_feature_id]['feature_type'];
-            $is_supported = in_array(
-                $feature_type,
-                [ProductFeatures::TEXT_SELECTBOX, ProductFeatures::NUMBER_SELECTBOX],
-                true
-            );
+            $is_supported = false;
+            if ($variant_entity_type === ProductFeatureVariantDto::ENTITY_TYPE) {
+                $is_supported = in_array(
+                    $feature_type,
+                    [
+                        ProductFeatures::TEXT_SELECTBOX,
+                        ProductFeatures::NUMBER_SELECTBOX
+                    ],
+                    true
+                );
+            } elseif ($variant_entity_type === ManufacturerDto::ENTITY_TYPE){
+                $is_supported = $feature_type === ProductFeatures::EXTENDED;
+            }
 
             if (!$is_supported) {
                 $this->logging->error(self::LOG_SOURCE, __('synchro.product_feature_import_error.unsupported_target', [
@@ -162,7 +172,7 @@ class ProductFeatureImporter
         $local_variants = $this->loadLocalVariants(array_keys($variant_groups), $target_features);
         $stored_variant_mappings = $this->entity_mapping_repository->findByExternalIds(
             $company_id,
-            ProductFeatureVariantDto::ENTITY_TYPE,
+            $variant_entity_type,
             $external_variant_ids
         );
         $variant_mappings = [];
@@ -218,7 +228,7 @@ class ProductFeatureImporter
         if ($variant_mappings) {
             $this->entity_mapping_repository->saveMany(
                 $company_id,
-                ProductFeatureVariantDto::ENTITY_TYPE,
+                $variant_entity_type,
                 $variant_mappings
             );
         }

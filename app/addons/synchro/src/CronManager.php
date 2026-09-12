@@ -31,6 +31,8 @@ class CronManager
 
     const POST_PROCESS_APPLY_CATEGORIES = 'synchro_import.apply_categories';
 
+    const POST_PROCESS_APPLY_MANUFACTURERS = 'synchro_import.apply_manufacturers';
+
     const POST_PROCESS_ACTUALIZE_PRODUCTS = 'synchro_import.actualize_products';
 
     /**
@@ -310,6 +312,92 @@ class CronManager
     }
 
     /**
+     * Places configured post-process tasks immediately after their source tasks.
+     *
+     * @param array<int, array<string, array<int, string>|int|string|null>> $scripts Cron tasks
+     *
+     * @return array<int, array<string, array<int, string>|int|string|null>>
+     */
+    public function orderCronScriptsByDependencies(array $scripts)
+    {
+        $script_ids_by_dispatch = [];
+        $children_by_script_id = [];
+        $dependent_script_ids = [];
+        $ordered_scripts = [];
+
+        foreach ($scripts as $script_id => $script) {
+            $script_ids_by_dispatch[$script['script']] = $script_id;
+        }
+        foreach ($scripts as $script_id => $script) {
+            if (
+                empty($script['post_process'])
+                || !isset($script_ids_by_dispatch[$script['post_process']])
+            ) {
+                continue;
+            }
+
+            $child_script_id = $script_ids_by_dispatch[$script['post_process']];
+            $children_by_script_id[$script_id][] = $child_script_id;
+            $dependent_script_ids[$child_script_id] = true;
+        }
+
+        foreach ($scripts as $script_id => $script) {
+            if (isset($dependent_script_ids[$script_id])) {
+                continue;
+            }
+
+            $script['dependency_level'] = 0;
+            $ordered_scripts[$script_id] = $script;
+            if (empty($children_by_script_id[$script_id])) {
+                continue;
+            }
+
+            foreach ($children_by_script_id[$script_id] as $child_script_id) {
+                $child_script = $scripts[$child_script_id];
+                $child_script['dependency_level'] = 1;
+                $child_script['dependency_source'] = $script['script'];
+                $ordered_scripts[$child_script_id] = $child_script;
+            }
+        }
+
+        return $ordered_scripts;
+    }
+
+    /**
+     * Gets the fields displayed by periodically refreshed task status columns.
+     *
+     * @param array<int> $script_ids Cron task identifiers
+     *
+     * @return array<int, array{script_id: int, last_launch: int, inner_status: string, progress_status: string}>
+     */
+    public function getCronScriptStatuses(array $script_ids)
+    {
+        $script_ids = array_values(array_filter(array_map('intval', $script_ids)));
+        if (!$script_ids || !$this->available_scripts) {
+            return [];
+        }
+
+        $scripts = $this->database->getHash(
+            'SELECT script_id, last_launch, inner_status, progress_status FROM ?:?p'
+            . ' WHERE script_id IN (?n) AND script IN (?a)',
+            'script_id',
+            self::TABLE_NAME,
+            $script_ids,
+            array_keys($this->available_scripts)
+        );
+
+        foreach ($scripts as &$script) {
+            $script['script_id'] = (int) $script['script_id'];
+            $script['last_launch'] = (int) $script['last_launch'];
+            $script['inner_status'] = (string) $script['inner_status'];
+            $script['progress_status'] = (string) $script['progress_status'];
+        }
+        unset($script);
+
+        return $scripts;
+    }
+
+    /**
      * Gets cron script data.
      *
      * @param int $script_id Cron script identifier
@@ -431,11 +519,15 @@ class CronManager
                     ? 'scheduled'
                     : ($exit_code === 0 ? 'completed' : 'failed');
                 $this->database->query(
-                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s) WHERE script_id = ?i AND inner_status IN (?a)',
+                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s), progress_status = ?s'
+                    . ' WHERE script_id = ?i AND inner_status IN (?a)',
                     self::TABLE_NAME,
                     'stopping',
                     $script['run_mode'] === self::RUN_MODE_ONCE ? 'cancelled' : 'scheduled',
                     $result_status,
+                    __('synchro.task_finished_at', [
+                        '[time]' => date('Y-m-d H:i:s', TIME),
+                    ]),
                     $script['script_id'],
                     ['in_progress', 'stopping']
                 );
@@ -1330,6 +1422,10 @@ class CronManager
             'synchro_import.categories' => [
                 '',
                 self::POST_PROCESS_APPLY_CATEGORIES,
+            ],
+            'synchro_import.manufacturers' => [
+                '',
+                self::POST_PROCESS_APPLY_MANUFACTURERS,
             ],
         ];
         $script_data['post_process'] = isset($script_data['post_process'])

@@ -29,6 +29,10 @@ return [
         'name'   => 'synchro.apply_categories',
         'hidden' => true,
     ],
+    'synchro_import.apply_manufacturers' => [
+        'name'   => 'synchro.apply_manufacturers',
+        'hidden' => true,
+    ],
     'synchro_import.apply_test_products' => [
         'name'   => 'synchro.apply_test_products',
         'hidden' => true,

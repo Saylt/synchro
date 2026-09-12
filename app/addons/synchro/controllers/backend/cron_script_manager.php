@@ -11,6 +11,35 @@ $request_script_id = isset($_REQUEST['script_id']) && is_scalar($_REQUEST['scrip
     ? (int) $_REQUEST['script_id']
     : 0;
 
+if ($mode === 'refresh_statuses') {
+    $script_ids = [];
+    if (isset($_REQUEST['script_ids']) && is_array($_REQUEST['script_ids'])) {
+        foreach ($_REQUEST['script_ids'] as $script_id) {
+            if (is_scalar($script_id)) {
+                $script_ids[] = (int) $script_id;
+            }
+        }
+    }
+    $statuses = $cron_manager->getCronScriptStatuses($script_ids);
+    $date_format = Registry::get('settings.Appearance.date_format')
+        . ', ' . Registry::get('settings.Appearance.time_format');
+
+    foreach ($statuses as &$status) {
+        $status['last_launch'] = $status['last_launch']
+            ? fn_date_format($status['last_launch'], $date_format)
+            : __('never');
+        if ($status['inner_status'] !== 'scheduled') {
+            $status['last_launch'] .= ' (' . __('synchro.' . $status['inner_status']) . ')';
+        }
+        $status['progress_status'] = $status['progress_status'] ?: '—';
+    }
+    unset($status);
+
+    Tygh::$app['ajax']->assign('synchro_cron_statuses', $statuses);
+
+    return [CONTROLLER_STATUS_NO_CONTENT];
+}
+
 /** @psalm-suppress PossiblyUndefinedArrayOffset */
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($mode === 'update') {
@@ -42,6 +71,7 @@ if ($mode === 'manage') {
         $request,
         Registry::get('settings.Appearance.admin_elements_per_page')
     );
+    $scripts = $cron_manager->orderCronScriptsByDependencies($scripts);
     $view->assign('scripts', $scripts);
     $view->assign('search', $search);
     $view->assign(

@@ -57,6 +57,26 @@ if ($mode === 'apply_categories' || isset($product_application_modes[$mode])) {
     return [CONTROLLER_STATUS_NO_CONTENT];
 }
 
+if ($mode === 'apply_manufacturers') {
+    if (!$source_import_id || !$cron_script_id) {
+        return [CONTROLLER_STATUS_NO_PAGE];
+    }
+
+    try {
+        ServiceProvider::getManufacturerApplicationManager()->apply($source_import_id);
+    } catch (TaskInterruptedException $exception) {
+        $logging->error($log_source, $exception->getMessage());
+
+        return [CONTROLLER_STATUS_NO_CONTENT];
+    } catch (Throwable $exception) {
+        $logging->error($log_source, $exception->getMessage());
+
+        throw $exception;
+    }
+
+    return [CONTROLLER_STATUS_NO_CONTENT];
+}
+
 $product_worker_modes = [
     'synchro_import.apply_products'      => ProductApplicationManager::MODE_FULL,
     'synchro_import.apply_test_products' => ProductApplicationManager::MODE_TEST,
@@ -301,6 +321,14 @@ if ($mode === 'manufacturers') {
             )
         );
         $import_repository->completeImport($import_id);
+        if ($cron_script_id) {
+            $cron_manager->queuePostProcess(
+                $cron_script_id,
+                $import_id,
+                ImportEntityRepository::SOURCE_TYPE_FULL,
+                ImportEntityRepository::STATUS_COMPLETED
+            );
+        }
     } catch (TaskInterruptedException $exception) {
         $import_repository->failImport($import_id);
         $logging->error($log_source, $exception->getMessage());

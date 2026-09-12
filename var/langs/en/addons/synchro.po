@@ -308,6 +308,10 @@ msgctxt "Languages::synchro.progress_status"
 msgid "Progress status"
 msgstr "Progress status"
 
+msgctxt "Languages::synchro.refresh_task_statuses"
+msgid "Refresh task statuses automatically"
+msgstr "Refresh task statuses automatically"
+
 msgctxt "Languages::synchro.run_mode"
 msgid "Run mode"
 msgstr "Run mode"
@@ -463,6 +467,10 @@ msgstr "Synchro product feature mapping"
 msgctxt "Languages::synchro.feature_mapping_description"
 msgid "Select one or more imported features and map them to one store feature, create a new store feature, or skip them."
 msgstr "Select one or more imported features and map them to one store feature, create a new store feature, or skip them."
+
+msgctxt "Languages::synchro.product_features"
+msgid "Product features"
+msgstr "Product features"
 
 msgctxt "Languages::synchro.imported_feature"
 msgid "Imported feature"
@@ -799,6 +807,34 @@ msgstr "Import products into the catalog"
 msgctxt "Languages::synchro.apply_categories"
 msgid "Import categories into the catalog"
 msgstr "Import categories into the catalog"
+
+msgctxt "Languages::synchro.apply_manufacturers"
+msgid "Import brands into the catalog"
+msgstr "Import brands into the catalog"
+
+msgctxt "Languages::synchro.brands"
+msgid "Brands"
+msgstr "Brands"
+
+msgctxt "Languages::synchro.brand_mapping_description"
+msgid "Map imported brands to one local feature. Brand variants and their images are synchronized automatically."
+msgstr "Map imported brands to one local feature. Brand variants and their images are synchronized automatically."
+
+msgctxt "Languages::synchro.product_import_error.brand_feature_mapping_not_found"
+msgid "Product [external_id] references a brand without a feature mapping."
+msgstr "Product [external_id] references a brand without a feature mapping."
+
+msgctxt "Languages::synchro.product_import_error.brand_variant_mapping_not_found"
+msgid "Product [external_id] references manufacturer [manufacturer_id] without a brand variant mapping."
+msgstr "Product [external_id] references manufacturer [manufacturer_id] without a brand variant mapping."
+
+msgctxt "Languages::synchro.manufacturer_import_error.image_sync_failed"
+msgid "Brand [external_id] image synchronization failed: [error]"
+msgstr "Brand [external_id] image synchronization failed: [error]"
+
+msgctxt "Languages::synchro.exception.completed_manufacturer_import_required"
+msgid "A completed root manufacturer import is required."
+msgstr "A completed root manufacturer import is required."
 
 msgctxt "Languages::synchro.apply_test_products"
 msgid "Import test products into the catalog"

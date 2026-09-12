@@ -7,6 +7,7 @@ use Pimple\ServiceProviderInterface;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Tygh\Addons\Synchro\Application\CategoryApplicationManager;
 use Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder;
+use Tygh\Addons\Synchro\Application\ManufacturerApplicationManager;
 use Tygh\Addons\Synchro\Application\ProductApplicationManager;
 use Tygh\Addons\Synchro\Api\ApiClient;
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
@@ -158,6 +159,10 @@ class ServiceProvider implements ServiceProviderInterface
             return new ImportedProductFeatureReader($app['addons.synchro.repository.import_entity']);
         };
 
+        $app['addons.synchro.imported_manufacturer_reader'] = static function (Container $app) {
+            return new ImportedManufacturerReader($app['addons.synchro.repository.import_entity']);
+        };
+
         $app['addons.synchro.product_application_manager'] = static function (Container $app) {
             return new ProductApplicationManager(
                 $app['addons.synchro.repository.import_entity'],
@@ -173,6 +178,17 @@ class ServiceProvider implements ServiceProviderInterface
                 $app['addons.synchro.repository.import_entity'],
                 $app['addons.synchro.importers.category'],
                 $app['addons.synchro.repository.import_entity_map']
+            );
+        };
+
+        $app['addons.synchro.manufacturer_application_manager'] = static function (Container $app) {
+            return new ManufacturerApplicationManager(
+                $app['addons.synchro.repository.import_entity'],
+                $app['addons.synchro.imported_manufacturer_reader'],
+                $app['addons.synchro.importers.product_feature'],
+                $app['addons.synchro.repository.import_entity_map'],
+                $app['addons.synchro.importers.image'],
+                $app['addons.synchro.logging']
             );
         };
 
@@ -346,10 +362,26 @@ class ServiceProvider implements ServiceProviderInterface
     }
 
     /**
+     * @return \Tygh\Addons\Synchro\Application\ManufacturerApplicationManager
+     */
+    public static function getManufacturerApplicationManager()
+    {
+        return Tygh::$app['addons.synchro.manufacturer_application_manager'];
+    }
+
+    /**
      * @return \Tygh\Addons\Synchro\ImportedProductFeatureReader
      */
     public static function getImportedProductFeatureReader()
     {
         return Tygh::$app['addons.synchro.imported_product_feature_reader'];
+    }
+
+    /**
+     * @return \Tygh\Addons\Synchro\ImportedManufacturerReader
+     */
+    public static function getImportedManufacturerReader()
+    {
+        return Tygh::$app['addons.synchro.imported_manufacturer_reader'];
     }
 }

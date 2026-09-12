@@ -1,8 +1,50 @@
 (function (_, $) {
+    var status_refresh_interval;
+
+    function refreshTaskStatuses() {
+        var $last_launch_cells = $('[data-ca-synchro-last-launch]');
+        var script_ids = $last_launch_cells.map(function () {
+            return $(this).data('caSynchroLastLaunch');
+        }).get();
+
+        if (!script_ids.length) {
+            return;
+        }
+
+        $.ceAjax('request', fn_url('cron_script_manager.refresh_statuses'), {
+            method: 'get',
+            caching: false,
+            hidden: true,
+            data: {
+                script_ids: script_ids
+            },
+            callback: function (data) {
+                $.each(data.synchro_cron_statuses, function (script_id, status) {
+                    $('[data-ca-synchro-last-launch="' + script_id + '"]').text(status.last_launch);
+                    $('[data-ca-synchro-progress-status="' + script_id + '"]').text(status.progress_status);
+                });
+            }
+        });
+    }
+
+    function toggleTaskStatusRefresh(enabled) {
+        if (status_refresh_interval) {
+            clearInterval(status_refresh_interval);
+            status_refresh_interval = null;
+        }
+        if (!enabled) {
+            return;
+        }
+
+        refreshTaskStatuses();
+        status_refresh_interval = setInterval(refreshTaskStatuses, 3000);
+    }
+
     function syncForm($form) {
         var script = $('#cron_script_script', $form).val();
         var is_product_import = script === 'synchro_import.products';
         var is_category_import = script === 'synchro_import.categories';
+        var is_manufacturer_import = script === 'synchro_import.manufacturers';
         var is_test_import = $('#synchro_is_test_import', $form).is(':checked');
         var uses_portions = $('#synchro_use_portions', $form).is(':checked');
         var is_periodic = $('#cron_script_run_mode', $form).val() === 'periodic';
@@ -11,6 +53,8 @@
         $('#synchro_product_post_process', $form).prop('disabled', !is_product_import);
         $('#synchro_category_import_settings', $form).toggle(is_category_import);
         $('#synchro_category_post_process', $form).prop('disabled', !is_category_import);
+        $('#synchro_manufacturer_import_settings', $form).toggle(is_manufacturer_import);
+        $('#synchro_manufacturer_post_process', $form).prop('disabled', !is_manufacturer_import);
         $('#synchro_entity_application_settings', $form).toggle(is_product_import || is_category_import);
         $('.synchro-product-application-label', $form).toggle(is_product_import);
         $('.synchro-category-application-label', $form).toggle(is_category_import);
@@ -67,6 +111,15 @@
     }
 
     $.ceEvent('on', 'ce.commoninit', function (context) {
+
+        $('#synchro_refresh_task_statuses', context).off('change.synchroCronStatusRefresh')
+            .on('change.synchroCronStatusRefresh', function () {
+                toggleTaskStatusRefresh(this.checked);
+            })
+            .each(function () {
+                toggleTaskStatusRefresh(this.checked);
+            });
+
         $('form[name="cron_script_form"]', context).each(function () {
             var $form = $(this);
 

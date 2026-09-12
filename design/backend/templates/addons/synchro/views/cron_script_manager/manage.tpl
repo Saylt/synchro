@@ -35,7 +35,14 @@
    		<input type="checkbox" name="script_ids[]" value="{$s.script_id}" class="checkbox cm-item" />
 	</td>
 	<td>
-		<div>{$s.script}</div>
+		{if $s.dependency_level}
+			<div class="synchro-dependent-task">
+				<span class="muted">&rdsh; {__("synchro.after_finish")}: {$s.dependency_source}</span>
+				{$s.script}
+			</div>
+		{else}
+			<div>{$s.script}</div>
+		{/if}
 		{if $s.description}<span class="product-code-label">{$s.description}</span>{/if}
 	</td>
 	<td>{__("synchro.{$s.run_mode}")}</td>
@@ -69,7 +76,7 @@
 			{/if}
 		</div>
 	</td>
-	<td>
+	<td data-ca-synchro-last-launch="{$s.script_id}">
 		{if $s.last_launch}
 			{$s.last_launch|date_format:"`$settings.Appearance.date_format`, `$settings.Appearance.time_format`"}
 		{else}
@@ -79,7 +86,7 @@
 			({__("synchro.`$s.inner_status`")})
 		{/if}
 	</td>
-	<td>{$s.progress_status|default:"—"}</td>
+	<td data-ca-synchro-progress-status="{$s.script_id}">{$s.progress_status|default:"—"}</td>
 	<td>
 		{include file="common/select_popup.tpl" id=$s.script_id status=$s.status object_id_name="script_id" table="synchro_cron_scripts"}
 	</td>
@@ -235,6 +242,10 @@
 {/capture}
 
 {capture name="buttons"}
+	<label class="checkbox">
+		<input type="checkbox" id="synchro_refresh_task_statuses" value="Y">
+		{__("synchro.refresh_task_statuses")}
+	</label>
     {include
         file="buttons/button.tpl"
         but_href="synchro_logs.manage"
