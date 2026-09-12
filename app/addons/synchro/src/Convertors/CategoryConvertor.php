@@ -52,7 +52,7 @@ class CategoryConvertor implements ConvertorInterface
         $source_categories = $data['data'];
 
         foreach ($source_categories as $source_category) {
-            $this->convertCategory($source_category, null, $categories, $cron_script_id);
+            $this->convertCategory($source_category, 0, $categories, $cron_script_id);
         }
 
         $this->cron_manager->ensureTaskCanContinue($cron_script_id);
@@ -66,9 +66,10 @@ class CategoryConvertor implements ConvertorInterface
      * Converts a category and its children into a flat list.
      *
      * @param array<string, array|int|string>                     $source_category API category data
-     * @param \Tygh\Addons\Synchro\Dto\CategoryDto|null           $parent_category Parent category DTO
+     * @param int                                                 $level           Category tree level
      * @param array<string, \Tygh\Addons\Synchro\Dto\CategoryDto> $categories      Converted categories
      * @param int                                                 $cron_script_id  Cron script identifier
+     * @param \Tygh\Addons\Synchro\Dto\CategoryDto|null           $parent_category Parent category DTO
      *
      * @return void
      *
@@ -80,9 +81,10 @@ class CategoryConvertor implements ConvertorInterface
      */
     private function convertCategory(
         array $source_category,
-        CategoryDto $parent_category = null,
+        $level,
         array &$categories,
-        $cron_script_id = 0
+        $cron_script_id = 0,
+        CategoryDto $parent_category = null
     ) {
         $this->cron_manager->ensureTaskCanContinue($cron_script_id);
 
@@ -98,13 +100,14 @@ class CategoryConvertor implements ConvertorInterface
         $category->description = $source_category['description'];
         $category->product_count = $source_category['products'];
         $category->images = $source_category['images'];
+        $category->level = $level;
 
         $categories[$category->getEntityId()] = $category;
         /** @var array $children */
         $children = $source_category['children'];
 
         foreach ($children as $child) {
-            $this->convertCategory($child, $category, $categories, $cron_script_id);
+            $this->convertCategory($child, $level + 1, $categories, $cron_script_id, $category);
         }
     }
 }

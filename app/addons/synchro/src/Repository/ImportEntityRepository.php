@@ -4,6 +4,7 @@ namespace Tygh\Addons\Synchro\Repository;
 
 use UnexpectedValueException;
 use Throwable;
+use Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder;
 use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\RepresentEntityDto;
 use Tygh\Database\Connection;
@@ -35,6 +36,27 @@ class ImportEntityRepository
 
     const SOURCE_TYPE_TEST = 'test';
 
+    const IMPORT_INTEGER_FIELDS = [
+        'import_id',
+        'parent_import_id',
+        'staging_import_id',
+        'cron_script_id',
+        'company_id',
+        'process_group',
+        'page_from',
+        'page_to',
+        'current_page',
+        'page_limit',
+        'total_items',
+        'total_pages',
+        'max_parallel_processes',
+        'processed_items',
+        'created_at',
+        'started_at',
+        'updated_at',
+        'completed_at',
+    ];
+
     /**
      * @var \Tygh\Database\Connection
      */
@@ -61,7 +83,8 @@ class ImportEntityRepository
      *     total_items: int,
      *     total_pages: int,
      *     max_parallel_processes: int,
-     *     source_type?: string
+     *     source_type?: string,
+     *     staging_import_id?: int
      * } $plan
      *
      * @return int
@@ -74,15 +97,19 @@ class ImportEntityRepository
 
         return $this->database->replaceInto(self::IMPORTS_TABLE_NAME, [
             'parent_import_id'       => 0,
+            'staging_import_id'      => isset($plan['staging_import_id']) ? (int) $plan['staging_import_id'] : 0,
             'cron_script_id'         => $cron_script_id,
             'company_id'             => $company_id,
             'entity_type'            => $entity_type,
             'source_type'            => $source_type,
+            'process_group'          => 0,
+            'process_stage'          => EntityApplicationPlanBuilder::STAGE_FETCH,
             'status'                 => self::STATUS_PROCESSING,
             'page_limit'             => $plan['page_limit'],
             'total_items'            => $plan['total_items'],
             'total_pages'            => $plan['total_pages'],
             'max_parallel_processes' => $plan['max_parallel_processes'],
+            'processed_items'        => 0,
             'error_message'          => '',
             'created_at'             => TIME,
             'started_at'             => TIME,
@@ -104,8 +131,14 @@ class ImportEntityRepository
      *     total_items: int,
      *     total_pages: int,
      *     max_parallel_processes: int,
+     *     staging_import_id?: int,
      *     source_type?: string,
-     *     ranges: array<array-key, array{page_from: int, page_to: int}>
+     *     ranges: array<array-key, array{
+     *         page_from: int,
+     *         page_to: int,
+     *         process_group?: int,
+     *         process_stage?: string
+     *     }>
      * } $plan
      *
      * @return int Parent import identifier
@@ -117,6 +150,13 @@ class ImportEntityRepository
         $source_type = isset($plan['source_type']) && $plan['source_type'] === self::SOURCE_TYPE_TEST
             ? self::SOURCE_TYPE_TEST
             : self::SOURCE_TYPE_FULL;
+        $staging_import_id = isset($plan['staging_import_id']) ? (int) $plan['staging_import_id'] : 0;
+        $ranges = [];
+
+        foreach ($plan['ranges'] as $range) {
+            $range['staging_import_id'] = $staging_import_id;
+            $ranges[] = $range;
+        }
         $this->database->beginTransaction();
 
         try {
@@ -131,7 +171,7 @@ class ImportEntityRepository
                 $company_id,
                 $entity_type,
                 $cron_script_id,
-                $plan['ranges'],
+                $ranges,
                 $plan['page_limit'],
                 $source_type
             );
@@ -156,7 +196,13 @@ class ImportEntityRepository
      * @param int    $page_limit       API page limit
      * @param string $source_type      Staged snapshot type
      *
-     * @psalm-param array<array-key, array{page_from: int, page_to: int}> $ranges
+     * @psalm-param array<array-key, array{
+     *     page_from: int,
+     *     page_to: int,
+     *     staging_import_id?: int,
+     *     process_group?: int,
+     *     process_stage?: string
+     * }> $ranges
      *
      * @return array<int>
      */
@@ -177,15 +223,21 @@ class ImportEntityRepository
         foreach ($ranges as $range) {
             $import_ids[] = $this->database->replaceInto(self::IMPORTS_TABLE_NAME, [
                 'parent_import_id' => $parent_import_id,
+                'staging_import_id' => isset($range['staging_import_id']) ? (int) $range['staging_import_id'] : 0,
                 'cron_script_id'   => $cron_script_id,
                 'company_id'       => $company_id,
                 'entity_type'      => $entity_type,
                 'source_type'      => $source_type,
+                'process_group'    => isset($range['process_group']) ? (int) $range['process_group'] : 0,
+                'process_stage'    => isset($range['process_stage'])
+                    ? (string) $range['process_stage']
+                    : EntityApplicationPlanBuilder::STAGE_FETCH,
                 'status'           => self::STATUS_QUEUED,
                 'page_from'        => $range['page_from'],
                 'page_to'          => $range['page_to'],
                 'current_page'     => 0,
                 'page_limit'       => $page_limit,
+                'processed_items'  => 0,
                 'error_message'    => '',
                 'created_at'       => TIME,
                 'started_at'       => 0,
@@ -206,11 +258,19 @@ class ImportEntityRepository
      */
     public function findImport($import_id)
     {
-        return $this->database->getRow(
+        $import = $this->database->getRow(
             'SELECT * FROM ?:?p WHERE import_id = ?i',
             self::IMPORTS_TABLE_NAME,
             $import_id
         );
+
+        foreach (self::IMPORT_INTEGER_FIELDS as $field) {
+            if (isset($import[$field])) {
+                $import[$field] = (int) $import[$field];
+            }
+        }
+
+        return $import;
     }
 
     /**
@@ -223,7 +283,8 @@ class ImportEntityRepository
     public function findChildren($parent_import_id)
     {
         return $this->database->getArray(
-            'SELECT * FROM ?:?p WHERE parent_import_id = ?i ORDER BY page_from, import_id',
+            'SELECT * FROM ?:?p WHERE parent_import_id = ?i'
+            . ' ORDER BY process_group, page_from, import_id',
             self::IMPORTS_TABLE_NAME,
             $parent_import_id
         );
@@ -501,6 +562,58 @@ class ImportEntityRepository
     }
 
     /**
+     * Cancels queued children after a failed process group.
+     *
+     * @param int $parent_import_id Parent import identifier
+     * @param int $process_group    Failed process group
+     *
+     * @return int Number of cancelled children
+     */
+    public function cancelChildrenAfterGroup($parent_import_id, $process_group)
+    {
+        return (int) $this->database->query(
+            'UPDATE ?:?p SET status = ?s, updated_at = ?i, completed_at = ?i'
+            . ' WHERE parent_import_id = ?i AND process_group > ?i AND status = ?s',
+            self::IMPORTS_TABLE_NAME,
+            self::STATUS_CANCELLED,
+            TIME,
+            TIME,
+            $parent_import_id,
+            $process_group,
+            self::STATUS_QUEUED
+        );
+    }
+
+    /**
+     * Requeues children cancelled behind a recovered process group.
+     *
+     * @param int $parent_import_id Parent import identifier
+     * @param int $process_group    Recovered process group
+     *
+     * @return int Number of requeued children
+     */
+    public function retryCancelledChildrenAfterGroup($parent_import_id, $process_group)
+    {
+        return (int) $this->database->query(
+            'UPDATE ?:?p SET ?u'
+            . ' WHERE parent_import_id = ?i AND process_group > ?i AND status = ?s',
+            self::IMPORTS_TABLE_NAME,
+            [
+                'status'          => self::STATUS_QUEUED,
+                'current_page'    => 0,
+                'processed_items' => 0,
+                'error_message'   => '',
+                'started_at'      => 0,
+                'updated_at'      => TIME,
+                'completed_at'    => 0,
+            ],
+            $parent_import_id,
+            $process_group,
+            self::STATUS_CANCELLED
+        );
+    }
+
+    /**
      * Requeues a failed or cancelled child and reopens its parent.
      *
      * @param int $import_id Import identifier
@@ -529,6 +642,7 @@ class ImportEntityRepository
             [
                 'status'         => self::STATUS_QUEUED,
                 'current_page'   => 0,
+                'processed_items' => 0,
                 'error_message'  => '',
                 'started_at'     => 0,
                 'updated_at'     => TIME,
@@ -579,6 +693,7 @@ class ImportEntityRepository
                 [
                     'status'        => self::STATUS_QUEUED,
                     'current_page'  => 0,
+                    'processed_items' => 0,
                     'error_message' => '',
                     'started_at'    => 0,
                     'updated_at'    => TIME,
@@ -945,6 +1060,29 @@ class ImportEntityRepository
     }
 
     /**
+     * Counts unique staged DTOs across several import runs.
+     *
+     * @param array<int> $import_ids  Import identifiers
+     * @param string     $entity_type Entity type
+     *
+     * @return int
+     */
+    public function countDistinctEntities(array $import_ids, $entity_type)
+    {
+        if (!$import_ids) {
+            return 0;
+        }
+
+        return (int) $this->database->getField(
+            'SELECT COUNT(DISTINCT entity_id) FROM ?:?p'
+            . ' WHERE import_id IN (?n) AND entity_type = ?s',
+            self::TABLE_NAME,
+            $import_ids,
+            $entity_type
+        );
+    }
+
+    /**
      * Finds DTOs from several import runs.
      *
      * @param array<int> $import_ids  Import identifiers in precedence order
@@ -1021,7 +1159,7 @@ class ImportEntityRepository
             /** @var \Tygh\Addons\Synchro\Dto\RepresentEntityDto $entity */
             $entity = unserialize($serialized_entity);
             if (!$entity instanceof RepresentEntityDto || $entity->getEntityType() !== $entity_type) {
-                throw new UnexpectedValueException('The stored entity type does not match the requested type');
+                throw new UnexpectedValueException(__('synchro.exception.stored_entity_type_mismatch'));
             }
             $entities[] = $entity;
         }
@@ -1030,61 +1168,140 @@ class ImportEntityRepository
     }
 
     /**
-     * Finds a parent-first category batch after the persisted application checkpoint.
+     * Finds a 1-based range of unique DTOs from several import runs.
      *
-     * @param int $import_id                  Import identifier
-     * @param int $after_application_position Last applied category position
-     * @param int $limit                      Batch size
+     * @param array<int> $import_ids    Import identifiers
+     * @param string     $entity_type   Entity type
+     * @param int        $position_from First position in the range
+     * @param int        $position_to   Last position in the range
      *
-     * @return array<int, \Tygh\Addons\Synchro\Dto\CategoryDto> Categories keyed by application position
+     * @return array<array-key, \Tygh\Addons\Synchro\Dto\RepresentEntityDto>
      */
-    public function findCategoryApplicationBatch($import_id, $after_application_position, $limit)
+    public function findEntityRange(array $import_ids, $entity_type, $position_from, $position_to)
+    {
+        $position_from = max(1, (int) $position_from);
+        $position_to = (int) $position_to;
+        if (!$import_ids || $position_to < $position_from) {
+            return [];
+        }
+
+        $serialized_entities = $this->database->getColumn(
+            'SELECT entities.entity FROM ?:?p AS entities'
+            . ' INNER JOIN ('
+            . ' SELECT entity_id, MAX(import_id) AS import_id FROM ?:?p'
+            . ' WHERE import_id IN (?n) AND entity_type = ?s GROUP BY entity_id'
+            . ' ) AS latest ON latest.import_id = entities.import_id'
+            . ' AND latest.entity_id = entities.entity_id'
+            . ' WHERE entities.entity_type = ?s ORDER BY entities.entity_id LIMIT ?i, ?i',
+            self::TABLE_NAME,
+            self::TABLE_NAME,
+            $import_ids,
+            $entity_type,
+            $entity_type,
+            $position_from - 1,
+            $position_to - $position_from + 1
+        );
+        $entities = [];
+
+        foreach ($serialized_entities as $serialized_entity) {
+            /** @var \Tygh\Addons\Synchro\Dto\RepresentEntityDto $entity */
+            $entity = unserialize($serialized_entity);
+            if (!$entity instanceof RepresentEntityDto || $entity->getEntityType() !== $entity_type) {
+                throw new UnexpectedValueException(__('synchro.exception.stored_entity_type_mismatch'));
+            }
+            $entities[] = $entity;
+        }
+
+        return $entities;
+    }
+
+    /**
+     * Counts staged categories at every tree level.
+     *
+     * @param int $import_id Import identifier
+     *
+     * @return array<int, int>
+     */
+    public function findCategoryLevelCounts($import_id)
+    {
+        if (!$import_id) {
+            return [];
+        }
+
+        $rows = $this->database->getArray(
+            'SELECT application_level, COUNT(*) AS entity_count FROM ?:?p'
+            . ' WHERE import_id = ?i AND entity_type = ?s'
+            . ' GROUP BY application_level ORDER BY application_level',
+            self::TABLE_NAME,
+            $import_id,
+            CategoryDto::ENTITY_TYPE
+        );
+        $level_counts = [];
+
+        foreach ($rows as $row) {
+            $level_counts[(int) $row['application_level']] = (int) $row['entity_count'];
+        }
+
+        return $level_counts;
+    }
+
+    /**
+     * Finds a category batch within one tree level.
+     *
+     * @param int $import_id Import identifier
+     * @param int $level     Category tree level
+     * @param int $offset    Batch offset
+     * @param int $limit     Batch size
+     *
+     * @return array<array-key, \Tygh\Addons\Synchro\Dto\CategoryDto>
+     */
+    public function findCategoryLevelBatch($import_id, $level, $offset, $limit)
     {
         if (!$import_id || $limit < 1) {
             return [];
         }
 
-        $rows = $this->database->getArray(
-            'SELECT application_position, entity FROM ?:?p'
-            . ' WHERE import_id = ?i AND entity_type = ?s AND application_position > ?i'
-            . ' ORDER BY application_position LIMIT ?i',
+        $serialized_categories = $this->database->getColumn(
+            'SELECT entity FROM ?:?p'
+            . ' WHERE import_id = ?i AND entity_type = ?s AND application_level = ?i'
+            . ' ORDER BY entity_id LIMIT ?i, ?i',
             self::TABLE_NAME,
             $import_id,
             CategoryDto::ENTITY_TYPE,
-            $after_application_position,
-            $limit
+            max(0, (int) $level),
+            max(0, (int) $offset),
+            (int) $limit
         );
         $categories = [];
 
-        foreach ($rows as $row) {
-            /** @var \Tygh\Addons\Synchro\Dto\CategoryDto $category */
-            $category = unserialize($row['entity']);
+        foreach ($serialized_categories as $serialized_category) {
+            $category = unserialize($serialized_category);
             if (!$category instanceof CategoryDto) {
-                throw new UnexpectedValueException('The stored entity is not a category');
+                throw new UnexpectedValueException(__('synchro.exception.stored_entity_not_category'));
             }
-            $categories[(int) $row['application_position']] = $category;
+            $categories[] = $category;
         }
 
         return $categories;
     }
 
     /**
-     * Stores the last fully applied category position.
+     * Stores the number of successfully processed entities of a child process.
      *
-     * @param int $import_id          Import identifier
-     * @param int $application_cursor Last applied category position
+     * @param int $import_id       Import identifier
+     * @param int $processed_items Processed entity count
      *
      * @return bool
      */
-    public function updateApplicationCursor($import_id, $application_cursor)
+    public function updateProcessedItems($import_id, $processed_items)
     {
-        return $this->database->query(
-            'UPDATE ?:?p SET application_cursor = ?i, updated_at = ?i WHERE import_id = ?i',
+        return (bool) (int) $this->database->query(
+            'UPDATE ?:?p SET processed_items = ?i, updated_at = ?i WHERE import_id = ?i',
             self::IMPORTS_TABLE_NAME,
-            $application_cursor,
+            max(0, (int) $processed_items),
             TIME,
             $import_id
-        ) !== false;
+        );
     }
 
     /**
@@ -1195,16 +1412,16 @@ class ImportEntityRepository
         $timestamp = time();
         $records = [];
 
-        foreach ($categories as $application_position => $category) {
+        foreach ($categories as $category) {
             $records[] = [
-                'import_id'            => $import_id,
-                'company_id'           => $company_id,
-                'entity_id'            => $category->getEntityId(),
-                'entity_type'          => CategoryDto::ENTITY_TYPE,
-                'application_position' => $application_position + 1,
-                'entity'               => serialize($category),
-                'created_at'           => $timestamp,
-                'updated_at'           => $timestamp,
+                'import_id'         => $import_id,
+                'company_id'        => $company_id,
+                'entity_id'         => $category->getEntityId(),
+                'entity_type'       => CategoryDto::ENTITY_TYPE,
+                'application_level' => $category->level,
+                'entity'            => serialize($category),
+                'created_at'        => $timestamp,
+                'updated_at'        => $timestamp,
             ];
         }
 
@@ -1213,7 +1430,7 @@ class ImportEntityRepository
                 self::TABLE_NAME,
                 $records,
                 true,
-                ['entity', 'application_position', 'updated_at']
+                ['entity', 'application_level', 'updated_at']
             )
             : 0;
     }

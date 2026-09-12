@@ -1,5 +1,14 @@
 <?php
 
+namespace Tygh\Addons\Synchro;
+
+if (!function_exists(__NAMESPACE__ . '\\__')) {
+    function __($language_variable, array $params = [])
+    {
+        return $language_variable . ($params ? json_encode($params) : '');
+    }
+}
+
 namespace Tygh\Addons\Synchro\Tests\Unit;
 
 defined('DESCR_SL') or define('DESCR_SL', 'en');
@@ -7,6 +16,9 @@ defined('SECONDS_IN_DAY') or define('SECONDS_IN_DAY', 86400);
 defined('TIME') or define('TIME', time());
 
 use Tygh\Addons\Synchro\CronManager;
+use Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder;
+use Tygh\Addons\Synchro\Application\ProductApplicationManager;
+use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\ImportProcessManager;
 use Tygh\Addons\Synchro\ProductImportRangeBuilder;
@@ -55,6 +67,83 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertSame(ImportEntityRepository::SOURCE_TYPE_TEST, $repository->imports[$parent_id]['source_type']);
         $children = $repository->findChildren($parent_id);
         $this->assertSame(ImportEntityRepository::SOURCE_TYPE_TEST, $children[0]['source_type']);
+    }
+
+    public function testCreatesProductApplicationHierarchy()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            50 => [
+                'import_id'        => 50,
+                'parent_import_id' => 0,
+                'company_id'       => 4,
+                'entity_type'      => ImportDataCommand::ENTITY_PRODUCTS,
+                'source_type'      => ImportEntityRepository::SOURCE_TYPE_FULL,
+                'status'           => ImportEntityRepository::STATUS_COMPLETED,
+            ],
+            51 => [
+                'import_id'        => 51,
+                'parent_import_id' => 50,
+                'status'           => ImportEntityRepository::STATUS_COMPLETED,
+                'page_from'        => 1,
+            ],
+            52 => [
+                'import_id'        => 52,
+                'parent_import_id' => 50,
+                'status'           => ImportEntityRepository::STATUS_COMPLETED,
+                'page_from'        => 2,
+            ],
+        ];
+        $repository->distinct_entity_count = 65;
+
+        $parent_id = $this->createManager($repository)->createProductApplication([
+            'script_id'              => 16,
+            'entities_per_portion'   => 20,
+            'max_parallel_processes' => 3,
+        ], 50, ProductApplicationManager::MODE_FULL);
+
+        $this->assertSame(1, $parent_id);
+        $this->assertSame(50, $repository->imports[$parent_id]['staging_import_id']);
+        $this->assertSame(65, $repository->imports[$parent_id]['total_items']);
+        $this->assertSame(3, $repository->imports[$parent_id]['max_parallel_processes']);
+        $children = $repository->findChildren($parent_id);
+        $this->assertSame(
+            ['prepare', 'apply', 'apply', 'apply', 'apply', 'finalize'],
+            array_column($children, 'process_stage')
+        );
+        $this->assertSame([0, 1, 1, 1, 1, 2], array_column($children, 'process_group'));
+        $this->assertSame([50, 50, 50, 50, 50, 50], array_column($children, 'staging_import_id'));
+        $this->assertSame([0, 1, 21, 41, 61, 0], array_column($children, 'page_from'));
+        $this->assertSame([0, 20, 40, 60, 65, 0], array_column($children, 'page_to'));
+    }
+
+    public function testCreatesCategoryApplicationHierarchyByTreeLevels()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports[50] = [
+            'import_id'        => 50,
+            'parent_import_id' => 0,
+            'company_id'       => 4,
+            'entity_type'      => ImportDataCommand::ENTITY_CATEGORIES,
+            'source_type'      => ImportEntityRepository::SOURCE_TYPE_FULL,
+            'status'           => ImportEntityRepository::STATUS_COMPLETED,
+        ];
+        $repository->category_level_counts = [0 => 10, 1 => 35];
+
+        $parent_id = $this->createManager($repository)->createCategoryApplication([
+            'script_id'              => 16,
+            'entities_per_portion'   => 30,
+            'max_parallel_processes' => 4,
+        ], 50);
+
+        $this->assertSame(1, $parent_id);
+        $this->assertSame(45, $repository->imports[$parent_id]['total_items']);
+        $this->assertSame(4, $repository->imports[$parent_id]['max_parallel_processes']);
+        $children = $repository->findChildren($parent_id);
+        $this->assertSame(['apply', 'apply', 'apply', 'finalize'], array_column($children, 'process_stage'));
+        $this->assertSame([0, 1, 1, 2], array_column($children, 'process_group'));
+        $this->assertSame([1, 1, 31, 0], array_column($children, 'page_from'));
+        $this->assertSame([10, 30, 35, 0], array_column($children, 'page_to'));
     }
 
     public function testDispatchesOnlyAvailableSlots()
@@ -109,6 +198,91 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertSame(ImportEntityRepository::STATUS_QUEUED, $repository->imports[57]['status']);
     }
 
+    public function testDoesNotCrossProcessGroupBarrier()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            10 => [
+                'import_id'              => 10,
+                'parent_import_id'       => 0,
+                'status'                 => ImportEntityRepository::STATUS_PROCESSING,
+                'max_parallel_processes' => 2,
+            ],
+            71 => [
+                'import_id'        => 71,
+                'parent_import_id' => 10,
+                'process_group'    => 0,
+                'status'           => ImportEntityRepository::STATUS_PROCESSING,
+                'page_from'        => 1,
+            ],
+            72 => [
+                'import_id'        => 72,
+                'parent_import_id' => 10,
+                'process_group'    => 1,
+                'status'           => ImportEntityRepository::STATUS_QUEUED,
+                'page_from'        => 1,
+            ],
+            73 => [
+                'import_id'        => 73,
+                'parent_import_id' => 10,
+                'process_group'    => 1,
+                'status'           => ImportEntityRepository::STATUS_QUEUED,
+                'page_from'        => 2,
+            ],
+        ];
+        $manager = $this->createManager($repository, static function () {
+            return true;
+        });
+
+        $this->assertSame(0, $manager->dispatchPending(10));
+        $repository->imports[71]['status'] = ImportEntityRepository::STATUS_COMPLETED;
+        $this->assertSame(2, $manager->dispatchPending(10));
+        $this->assertSame(ImportEntityRepository::STATUS_PROCESSING, $repository->imports[72]['status']);
+        $this->assertSame(ImportEntityRepository::STATUS_PROCESSING, $repository->imports[73]['status']);
+    }
+
+    public function testFailureCancelsOnlyLaterProcessGroups()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            10 => [
+                'import_id'              => 10,
+                'parent_import_id'       => 0,
+                'status'                 => ImportEntityRepository::STATUS_PROCESSING,
+                'max_parallel_processes' => 2,
+            ],
+            71 => [
+                'import_id'        => 71,
+                'parent_import_id' => 10,
+                'process_group'    => 1,
+                'status'           => ImportEntityRepository::STATUS_FAILED,
+                'page_from'        => 1,
+            ],
+            72 => [
+                'import_id'        => 72,
+                'parent_import_id' => 10,
+                'process_group'    => 1,
+                'status'           => ImportEntityRepository::STATUS_COMPLETED,
+                'page_from'        => 2,
+            ],
+            73 => [
+                'import_id'        => 73,
+                'parent_import_id' => 10,
+                'process_group'    => 2,
+                'status'           => ImportEntityRepository::STATUS_QUEUED,
+                'page_from'        => 1,
+            ],
+        ];
+        $manager = $this->createManager($repository, static function () {
+            return true;
+        });
+
+        $this->assertSame(0, $manager->dispatchPending(10));
+        $this->assertSame(ImportEntityRepository::STATUS_FAILED, $repository->imports[71]['status']);
+        $this->assertSame(ImportEntityRepository::STATUS_COMPLETED, $repository->imports[72]['status']);
+        $this->assertSame(ImportEntityRepository::STATUS_CANCELLED, $repository->imports[73]['status']);
+    }
+
     public function testDoesNotLaunchChildWhenAtomicClaimFails()
     {
         $repository = new InMemoryImportEntityRepository();
@@ -149,6 +323,39 @@ class ImportProcessManagerTest extends ATestCase
             "'/usr/bin/php' '/store/admin.php' '--dispatch=synchro_import.product_process'"
             . " '--import_id=55' '--cron_password=secret' > /dev/null 2>&1 &",
             $manager->prepareBackgroundCommand(55)
+        );
+    }
+
+    public function testSelectsWorkerDispatchFromProcessData()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            55 => [
+                'import_id'         => 55,
+                'staging_import_id' => 0,
+                'entity_type'       => ImportDataCommand::ENTITY_PRODUCTS,
+            ],
+            56 => [
+                'import_id'         => 56,
+                'staging_import_id' => 50,
+                'entity_type'       => ImportDataCommand::ENTITY_PRODUCTS,
+            ],
+            57 => [
+                'import_id'         => 57,
+                'staging_import_id' => 50,
+                'entity_type'       => ImportDataCommand::ENTITY_CATEGORIES,
+            ],
+        ];
+        $manager = $this->createManager($repository);
+
+        $this->assertStringContainsString('synchro_import.product_process', $manager->prepareBackgroundCommand(55));
+        $this->assertStringContainsString(
+            'synchro_import.product_application_process',
+            $manager->prepareBackgroundCommand(56)
+        );
+        $this->assertStringContainsString(
+            'synchro_import.category_application_process',
+            $manager->prepareBackgroundCommand(57)
         );
     }
 
@@ -255,6 +462,62 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertCount(1, $commands);
     }
 
+    public function testCompletingApplicationChildUpdatesAggregateProgress()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            10 => [
+                'import_id'              => 10,
+                'parent_import_id'       => 0,
+                'cron_script_id'         => 15,
+                'status'                 => ImportEntityRepository::STATUS_PROCESSING,
+                'max_parallel_processes' => 1,
+                'total_items'            => 5,
+            ],
+            11 => [
+                'import_id'         => 11,
+                'parent_import_id'  => 10,
+                'cron_script_id'    => 15,
+                'staging_import_id' => 50,
+                'entity_type'       => ImportDataCommand::ENTITY_PRODUCTS,
+                'process_group'     => 0,
+                'process_stage'     => EntityApplicationPlanBuilder::STAGE_APPLY,
+                'processed_items'   => 2,
+                'status'            => ImportEntityRepository::STATUS_PROCESSING,
+                'page_from'         => 1,
+            ],
+            12 => [
+                'import_id'         => 12,
+                'parent_import_id'  => 10,
+                'cron_script_id'    => 15,
+                'staging_import_id' => 50,
+                'entity_type'       => ImportDataCommand::ENTITY_PRODUCTS,
+                'process_group'     => 1,
+                'process_stage'     => EntityApplicationPlanBuilder::STAGE_FINALIZE,
+                'processed_items'   => 0,
+                'status'            => ImportEntityRepository::STATUS_QUEUED,
+                'page_from'         => 0,
+            ],
+        ];
+        $cron_manager = $this->getMockBuilder(CronManager::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['updateProgressStatus'])
+            ->getMock();
+        $cron_manager->expects($this->once())
+            ->method('updateProgressStatus')
+            ->with(15, $this->callback(static function ($status) {
+                return strpos($status, '2') !== false && strpos($status, '5') !== false;
+            }))
+            ->willReturn(true);
+        $manager = $this->createManager($repository, static function () {
+            return true;
+        }, $cron_manager);
+
+        $manager->completeProcess(11);
+
+        $this->assertSame(ImportEntityRepository::STATUS_COMPLETED, $repository->imports[11]['status']);
+    }
+
     public function testCancelsInterruptedChildWithoutRemovingOtherChildren()
     {
         $repository = new InMemoryImportEntityRepository();
@@ -300,7 +563,7 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertSame(ImportEntityRepository::STATUS_PARTIAL_SUCCESS, $repository->imports[10]['status']);
     }
 
-    public function testRetryReopensParentAndQueuesOnlySelectedChild()
+    public function testRetryReopensSelectedGroupAndBlockedLaterGroups()
     {
         $repository = new InMemoryImportEntityRepository();
         $repository->imports = [
@@ -316,13 +579,22 @@ class ImportProcessManagerTest extends ATestCase
                 'parent_import_id' => 10,
                 'cron_script_id'   => 15,
                 'status'           => ImportEntityRepository::STATUS_FAILED,
+                'process_group'    => 1,
                 'page_from'        => 1,
             ],
             12 => [
                 'import_id'        => 12,
                 'parent_import_id' => 10,
-                'status'           => ImportEntityRepository::STATUS_COMPLETED,
+                'status'           => ImportEntityRepository::STATUS_FAILED,
+                'process_group'    => 1,
                 'page_from'        => 2,
+            ],
+            13 => [
+                'import_id'        => 13,
+                'parent_import_id' => 10,
+                'status'           => ImportEntityRepository::STATUS_CANCELLED,
+                'process_group'    => 2,
+                'page_from'        => 1,
             ],
         ];
         $cron_manager = $this->getMockBuilder(CronManager::class)
@@ -340,7 +612,8 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertTrue($manager->retryProcess(11));
         $this->assertSame(ImportEntityRepository::STATUS_PROCESSING, $repository->imports[10]['status']);
         $this->assertSame(ImportEntityRepository::STATUS_PROCESSING, $repository->imports[11]['status']);
-        $this->assertSame(ImportEntityRepository::STATUS_COMPLETED, $repository->imports[12]['status']);
+        $this->assertSame(ImportEntityRepository::STATUS_FAILED, $repository->imports[12]['status']);
+        $this->assertSame(ImportEntityRepository::STATUS_QUEUED, $repository->imports[13]['status']);
     }
 
     public function testParentInterruptionCascadesToItsChildren()
@@ -440,12 +713,14 @@ class ImportProcessManagerTest extends ATestCase
                 'import_id'        => 12,
                 'parent_import_id' => 10,
                 'status'           => ImportEntityRepository::STATUS_FAILED,
+                'process_group'    => 1,
                 'page_from'        => 2,
             ],
             13 => [
                 'import_id'        => 13,
                 'parent_import_id' => 10,
                 'status'           => ImportEntityRepository::STATUS_CANCELLED,
+                'process_group'    => 2,
                 'page_from'        => 3,
             ],
         ];
@@ -464,7 +739,7 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertTrue($manager->retryFailedProcesses(15));
         $this->assertSame(ImportEntityRepository::STATUS_COMPLETED, $repository->imports[11]['status']);
         $this->assertSame(ImportEntityRepository::STATUS_PROCESSING, $repository->imports[12]['status']);
-        $this->assertSame(ImportEntityRepository::STATUS_PROCESSING, $repository->imports[13]['status']);
+        $this->assertSame(ImportEntityRepository::STATUS_QUEUED, $repository->imports[13]['status']);
     }
 
     /**
@@ -499,6 +774,7 @@ class ImportProcessManagerTest extends ATestCase
         return new ImportProcessManager(
             $repository,
             new ProductImportRangeBuilder(),
+            new EntityApplicationPlanBuilder(),
             $cron_manager,
             $lock_factory,
             '/store',
@@ -520,6 +796,12 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
 
     /** @var array<int> */
     public $stale_import_ids = [];
+
+    /** @var int */
+    public $distinct_entity_count = 0;
+
+    /** @var array<int, int> */
+    public $category_level_counts = [];
 
     /** @var int */
     private $next_id = 1;
@@ -546,12 +828,19 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
     public function createImportHierarchy($company_id, $entity_type, $cron_script_id, array $plan)
     {
         $parent_import_id = $this->createParentImport($company_id, $entity_type, $cron_script_id, $plan);
+        $ranges = [];
+        foreach ($plan['ranges'] as $range) {
+            $range['staging_import_id'] = isset($plan['staging_import_id'])
+                ? (int) $plan['staging_import_id']
+                : 0;
+            $ranges[] = $range;
+        }
         $this->createChildImports(
             $parent_import_id,
             $company_id,
             $entity_type,
             $cron_script_id,
-            $plan['ranges'],
+            $ranges,
             $plan['page_limit'],
             $plan['source_type']
         );
@@ -581,6 +870,7 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
                 'source_type'      => $source_type,
                 'status'           => self::STATUS_QUEUED,
                 'page_limit'       => $page_limit,
+                'processed_items'  => 0,
             ]);
             $import_ids[] = $import_id;
         }
@@ -599,7 +889,10 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
             return $import['parent_import_id'] === $parent_import_id;
         });
         usort($children, static function (array $left, array $right) {
-            return $left['page_from'] <=> $right['page_from'];
+            $group_comparison = (isset($left['process_group']) ? $left['process_group'] : 0)
+                <=> (isset($right['process_group']) ? $right['process_group'] : 0);
+
+            return $group_comparison ?: $left['page_from'] <=> $right['page_from'];
         });
 
         return $children;
@@ -672,6 +965,63 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
         $this->imports[$import_id]['status'] = self::STATUS_QUEUED;
 
         return true;
+    }
+
+    public function cancelChildrenAfterGroup($parent_import_id, $process_group)
+    {
+        $count = 0;
+        foreach ($this->imports as &$import) {
+            if (
+                $import['parent_import_id'] === $parent_import_id
+                && isset($import['process_group'])
+                && $import['process_group'] > $process_group
+                && $import['status'] === self::STATUS_QUEUED
+            ) {
+                $import['status'] = self::STATUS_CANCELLED;
+                $count++;
+            }
+        }
+        unset($import);
+
+        return $count;
+    }
+
+    public function retryCancelledChildrenAfterGroup($parent_import_id, $process_group)
+    {
+        $count = 0;
+        foreach ($this->imports as &$import) {
+            if (
+                $import['parent_import_id'] === $parent_import_id
+                && isset($import['process_group'])
+                && $import['process_group'] > $process_group
+                && $import['status'] === self::STATUS_CANCELLED
+            ) {
+                $import['status'] = self::STATUS_QUEUED;
+                $count++;
+            }
+        }
+        unset($import);
+
+        return $count;
+    }
+
+    public function findCompletedChildIds($parent_import_id)
+    {
+        return array_map(static function (array $import) {
+            return (int) $import['import_id'];
+        }, array_filter($this->findChildren($parent_import_id), static function (array $import) {
+            return $import['status'] === self::STATUS_COMPLETED;
+        }));
+    }
+
+    public function countDistinctEntities(array $import_ids, $entity_type)
+    {
+        return $this->distinct_entity_count;
+    }
+
+    public function findCategoryLevelCounts($import_id)
+    {
+        return $this->category_level_counts;
     }
 
     public function retryChildren($parent_import_id)

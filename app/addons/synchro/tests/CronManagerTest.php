@@ -2,9 +2,11 @@
 
 namespace Tygh\Addons\Synchro;
 
-function __($language_variable, array $params = [])
-{
-    return $language_variable . json_encode($params);
+if (!function_exists(__NAMESPACE__ . '\\__')) {
+    function __($language_variable, array $params = [])
+    {
+        return $language_variable . ($params ? json_encode($params) : '');
+    }
 }
 
 namespace Tygh\Addons\Synchro\Tests\Unit;
@@ -51,8 +53,8 @@ class CronManagerTest extends ATestCase
             ->willReturn(['Type' => "enum('scheduled','completed')"]);
 
         $this->assertSame([
-            'scheduled' => 'synchro.scheduled[]',
-            'completed' => 'synchro.completed[]',
+            'scheduled' => 'synchro.scheduled',
+            'completed' => 'synchro.completed',
         ], $this->createManager($database)->getSetElements('inner_status', true));
     }
 
@@ -77,6 +79,7 @@ class CronManagerTest extends ATestCase
                     'use_portions'            => 'N',
                     'pages_per_portion'       => 1,
                     'page_limit'              => 10,
+                    'entities_per_portion'    => 17,
                     'max_parallel_processes'  => 1,
                     'is_test_import'          => 'Y',
                     'test_page'               => 25,
@@ -93,6 +96,7 @@ class CronManagerTest extends ATestCase
             'use_portions'            => 'Y',
             'pages_per_portion'       => 0,
             'page_limit'              => 500,
+            'entities_per_portion'    => 17,
             'max_parallel_processes'  => 8,
             'is_test_import'          => 'Y',
             'test_page'               => 25,
@@ -111,6 +115,8 @@ class CronManagerTest extends ATestCase
                 CronManager::TABLE_NAME,
                 $this->callback(static function (array $script_data) {
                     return $script_data['script'] === 'synchro_import.categories'
+                        && $script_data['entities_per_portion'] === 30
+                        && $script_data['max_parallel_processes'] === 3
                         && $script_data['post_process'] === CronManager::POST_PROCESS_APPLY_CATEGORIES;
                 })
             )
@@ -198,6 +204,69 @@ class CronManagerTest extends ATestCase
         ]));
     }
 
+    /**
+     * @dataProvider entityApplicationSettingsProvider
+     *
+     * @param string $script                         Cron dispatch
+     * @param mixed  $entities_per_portion           Submitted application portion size
+     * @param int    $expected_entities_per_portion  Expected application portion size
+     * @param mixed  $max_parallel_processes         Submitted process limit
+     * @param int    $expected_max_parallel_processes Expected process limit
+     *
+     * @return void
+     */
+    public function testEntityApplicationSettingsAreNormalized(
+        $script,
+        $entities_per_portion,
+        $expected_entities_per_portion,
+        $max_parallel_processes,
+        $expected_max_parallel_processes
+    ) {
+        $database = $this->createDatabase();
+        $database->expects($this->once())->method('getField')->willReturn(false);
+        $database->expects($this->once())->method('query')
+            ->with(
+                'INSERT INTO ?:?p ?e',
+                CronManager::TABLE_NAME,
+                $this->callback(static function (array $script_data) use (
+                    $expected_entities_per_portion,
+                    $expected_max_parallel_processes
+                ) {
+                    return $script_data['entities_per_portion'] === $expected_entities_per_portion
+                        && $script_data['max_parallel_processes'] === $expected_max_parallel_processes;
+                })
+            )
+            ->willReturn(15);
+
+        $this->assertSame(15, $this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            [$script => ['name' => $script]]
+        )->updateScriptData([
+            'script'                  => $script,
+            'period_week_days'        => ['monday'],
+            'run_mode'                => 'once',
+            'entities_per_portion'    => $entities_per_portion,
+            'max_parallel_processes'  => $max_parallel_processes,
+        ]));
+    }
+
+    /**
+     * Provides invalid and valid application settings for product and category imports.
+     *
+     * @return array<array{string, mixed, int, mixed, int}>
+     */
+    public function entityApplicationSettingsProvider()
+    {
+        return [
+            ['synchro_import.products', 17, 17, 4, 4],
+            ['synchro_import.products', 0, 1, 0, 1],
+            ['synchro_import.categories', -10, 1, -4, 1],
+            ['synchro_import.categories', 'invalid', 1, 'invalid', 1],
+        ];
+    }
+
     public function testControllerCommandReceivesCronScriptId()
     {
         $command = $this->createManager($this->createDatabase())->prepareScript(
@@ -232,11 +301,20 @@ class CronManagerTest extends ATestCase
         $database->expects($this->exactly(2))
             ->method('getRow')
             ->withConsecutive(
-                ['SELECT post_process FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15],
+                [
+                    'SELECT post_process, entities_per_portion, max_parallel_processes'
+                    . ' FROM ?:?p WHERE script_id = ?i',
+                    CronManager::TABLE_NAME,
+                    15,
+                ],
                 ['SELECT * FROM ?:?p WHERE script = ?s LIMIT 1', CronManager::TABLE_NAME, 'synchro_import.apply_products']
             )
             ->willReturnOnConsecutiveCalls(
-                ['post_process' => 'synchro_import.apply_products'],
+                [
+                    'post_process'            => 'synchro_import.apply_products',
+                    'entities_per_portion'    => '17',
+                    'max_parallel_processes'  => '4',
+                ],
                 ['script_id' => 16, 'inner_status' => 'completed']
             );
         $database->expects($this->once())
@@ -249,6 +327,8 @@ class CronManagerTest extends ATestCase
                     'run_mode'          => 'once',
                     'inner_status'      => 'queued',
                     'runtime_import_id' => 10,
+                    'entities_per_portion'   => 17,
+                    'max_parallel_processes' => 4,
                     'last_launch'       => TIME,
                 ],
                 16,
@@ -274,7 +354,12 @@ class CronManagerTest extends ATestCase
         $database->expects($this->exactly(2))
             ->method('getRow')
             ->withConsecutive(
-                ['SELECT post_process FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15],
+                [
+                    'SELECT post_process, entities_per_portion, max_parallel_processes'
+                    . ' FROM ?:?p WHERE script_id = ?i',
+                    CronManager::TABLE_NAME,
+                    15,
+                ],
                 ['SELECT * FROM ?:?p WHERE script = ?s LIMIT 1', CronManager::TABLE_NAME, 'synchro_import.apply_products']
             )
             ->willReturnOnConsecutiveCalls(
@@ -291,6 +376,8 @@ class CronManagerTest extends ATestCase
                     'run_mode'          => 'once',
                     'inner_status'      => 'queued',
                     'runtime_import_id' => 10,
+                    'entities_per_portion'   => 30,
+                    'max_parallel_processes' => 3,
                     'last_launch'       => TIME,
                     'script'            => 'synchro_import.apply_products',
                     'created'           => TIME,
@@ -314,7 +401,12 @@ class CronManagerTest extends ATestCase
         $database = $this->createDatabase();
         $database->expects($this->once())
             ->method('getRow')
-            ->with('SELECT post_process FROM ?:?p WHERE script_id = ?i', CronManager::TABLE_NAME, 15)
+            ->with(
+                'SELECT post_process, entities_per_portion, max_parallel_processes'
+                . ' FROM ?:?p WHERE script_id = ?i',
+                CronManager::TABLE_NAME,
+                15
+            )
             ->willReturn(['post_process' => 'synchro_import.apply_products']);
         $logging = $this->createMock(Logging::class);
         $logging->expects($this->once())
@@ -424,6 +516,8 @@ class CronManagerTest extends ATestCase
                     'refresh_hours'      => '3',
                     'refresh_minutes'    => '15',
                     'run_mode'           => 'periodic',
+                    'entities_per_portion'   => 30,
+                    'max_parallel_processes' => 3,
                     'post_process'       => '',
                     'created'            => TIME,
                 ]
@@ -468,6 +562,8 @@ class CronManagerTest extends ATestCase
                     'refresh_hours'      => '0',
                     'refresh_minutes'    => '0',
                     'run_mode'           => 'periodic',
+                    'entities_per_portion'   => 30,
+                    'max_parallel_processes' => 3,
                     'post_process'       => '',
                     'created'            => TIME,
                 ]
@@ -513,6 +609,8 @@ class CronManagerTest extends ATestCase
                     'refresh_hours'      => '0',
                     'refresh_minutes'    => '0',
                     'run_mode'           => 'periodic',
+                    'entities_per_portion'   => 30,
+                    'max_parallel_processes' => 3,
                     'post_process'       => '',
                     'created'            => TIME,
                 ]
@@ -754,7 +852,7 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('getRow')
             ->with(
-                'SELECT run_mode, inner_status FROM ?:?p WHERE script_id = ?i',
+                'SELECT script, run_mode, inner_status, last_launch FROM ?:?p WHERE script_id = ?i',
                 CronManager::TABLE_NAME,
                 15
             )
@@ -765,15 +863,60 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET inner_status = ?s, progress_status = ?s'
+                . ' WHERE script_id = ?i AND inner_status IN (?a)',
                 CronManager::TABLE_NAME,
                 'partial_success',
+                'synchro.task_finished_at' . json_encode([
+                    '[time]' => date('Y-m-d H:i:s', TIME),
+                ]),
                 15,
                 ['waiting_children', 'stopping']
             )
             ->willReturn(1);
 
         $this->assertTrue($this->createManager($database)->finalizeDeferredTask(15, 'partial_success'));
+    }
+
+    public function testFinalizingDeferredTaskStoresCompletionTimeAndLogsFullDuration()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('getRow')
+            ->willReturn([
+                'script'       => 'synchro_import.apply_categories',
+                'run_mode'     => 'once',
+                'inner_status' => 'waiting_children',
+                'last_launch'  => TIME - 15,
+            ]);
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'UPDATE ?:?p SET inner_status = ?s, progress_status = ?s'
+                . ' WHERE script_id = ?i AND inner_status IN (?a)',
+                CronManager::TABLE_NAME,
+                'completed',
+                'synchro.task_finished_at' . json_encode([
+                    '[time]' => date('Y-m-d H:i:s', TIME),
+                ]),
+                15,
+                ['waiting_children', 'stopping']
+            )
+            ->willReturn(1);
+        $logging = $this->createMock(Logging::class);
+        $logging->expects($this->once())
+            ->method('info')
+            ->with(
+                'synchro_import.apply_categories',
+                'synchro.task_execution_finished',
+                [
+                    'execution_time' => 15,
+                    'result_status'  => 'completed',
+                ]
+            );
+
+        $this->assertTrue($this->createManager($database, null, '/usr/bin/php', null, $logging)
+            ->finalizeDeferredTask(15, 'completed'));
     }
 
     public function testFinalizesDeferredPeriodicTaskBackToSchedule()
@@ -788,9 +931,13 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('query')
             ->with(
-                'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+                'UPDATE ?:?p SET inner_status = ?s, progress_status = ?s'
+                . ' WHERE script_id = ?i AND inner_status IN (?a)',
                 CronManager::TABLE_NAME,
                 'scheduled',
+                'synchro.task_finished_at' . json_encode([
+                    '[time]' => date('Y-m-d H:i:s', TIME),
+                ]),
                 15,
                 ['waiting_children', 'stopping']
             )
@@ -910,6 +1057,48 @@ class CronManagerTest extends ATestCase
             'last_launch'  => TIME,
             'runtime_import_id' => 0,
         ]);
+
+        $this->assertTrue($result);
+    }
+
+    public function testPostProcessDoesNotLogZeroDurationBeforeChildrenFinish()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('getRow')
+            ->willReturn([]);
+        $database->expects($this->exactly(2))
+            ->method('query')
+            ->willReturn(1);
+        $lock = $this->getMockBuilder(Lock::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['acquire', 'release'])
+            ->getMock();
+        $lock->expects($this->once())->method('acquire')->willReturn(true);
+        $lock->expects($this->once())->method('release');
+        $lock_factory = $this->getMockBuilder(Factory::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['createLock'])
+            ->getMock();
+        $lock_factory->expects($this->once())->method('createLock')->willReturn($lock);
+        $logging = $this->createMock(Logging::class);
+        $logging->expects($this->never())->method('info');
+
+        $result = $this->createManager(
+            $database,
+            $lock_factory,
+            '/usr/bin/true',
+            ['synchro_import.apply_categories' => ['name' => 'synchro.apply_categories']],
+            $logging
+        )
+            ->launchCronScript([
+                'script_id'         => 15,
+                'script'            => 'synchro_import.apply_categories',
+                'run_mode'          => 'once',
+                'inner_status'      => 'queued',
+                'last_launch'       => TIME,
+                'runtime_import_id' => 50,
+            ]);
 
         $this->assertTrue($result);
     }

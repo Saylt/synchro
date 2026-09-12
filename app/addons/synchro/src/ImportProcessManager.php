@@ -2,7 +2,11 @@
 
 namespace Tygh\Addons\Synchro;
 
+use InvalidArgumentException;
+use Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder;
+use Tygh\Addons\Synchro\Application\ProductApplicationManager;
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
+use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Lock\Factory;
@@ -21,6 +25,9 @@ class ImportProcessManager
 
     /** @var \Tygh\Addons\Synchro\ProductImportRangeBuilder */
     private $range_builder;
+
+    /** @var \Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder */
+    private $application_plan_builder;
 
     /** @var \Tygh\Addons\Synchro\CronManager */
     private $cron_manager;
@@ -44,19 +51,21 @@ class ImportProcessManager
     private $process_launcher;
 
     /**
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository $repository       Import repository
-     * @param \Tygh\Addons\Synchro\ProductImportRangeBuilder         $range_builder    Range builder
-     * @param \Tygh\Addons\Synchro\CronManager                       $cron_manager     Cron manager
-     * @param \Tygh\Lock\Factory                                     $lock_factory     Lock factory
-     * @param string                                                 $root_dir         Store root directory
-     * @param string                                                 $admin_index      Admin entry point
-     * @param string                                                 $cron_password    Cron password
-     * @param string                                                 $php_binary       PHP CLI binary
-     * @param callable|null                                          $process_launcher Background process launcher
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository        $repository               Import repository
+     * @param \Tygh\Addons\Synchro\ProductImportRangeBuilder                $range_builder            Range builder
+     * @param \Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder $application_plan_builder Application plan builder
+     * @param \Tygh\Addons\Synchro\CronManager                              $cron_manager             Cron manager
+     * @param \Tygh\Lock\Factory                                            $lock_factory             Lock factory
+     * @param string                                                        $root_dir                 Store root directory
+     * @param string                                                        $admin_index              Admin entry point
+     * @param string                                                        $cron_password            Cron password
+     * @param string                                                        $php_binary               PHP CLI binary
+     * @param callable|null                                                 $process_launcher         Background process launcher
      */
     public function __construct(
         ImportEntityRepository $repository,
         ProductImportRangeBuilder $range_builder,
+        EntityApplicationPlanBuilder $application_plan_builder,
         CronManager $cron_manager,
         Factory $lock_factory,
         $root_dir,
@@ -67,6 +76,7 @@ class ImportProcessManager
     ) {
         $this->repository = $repository;
         $this->range_builder = $range_builder;
+        $this->application_plan_builder = $application_plan_builder;
         $this->cron_manager = $cron_manager;
         $this->lock_factory = $lock_factory;
         $this->root_dir = rtrim($root_dir, '/');
@@ -133,6 +143,79 @@ class ImportProcessManager
     }
 
     /**
+     * Creates a process hierarchy that applies staged products.
+     *
+     * @param array<string, int|string|null> $script            Cron script data
+     * @param int                            $staging_import_id Staging import identifier
+     * @param string                         $mode              Product application mode
+     *
+     * @return int Parent application import identifier
+     */
+    public function createProductApplication(array $script, $staging_import_id, $mode)
+    {
+        $staging_import = $this->repository->findImport($staging_import_id);
+        if (!$staging_import) {
+            throw new InvalidArgumentException(__('synchro.exception.staged_product_import_required'));
+        }
+
+        $source_import_ids = $this->repository->findCompletedChildIds($staging_import_id);
+        if (!$source_import_ids) {
+            $source_import_ids = [$staging_import_id];
+        }
+        $total_items = $this->repository->countDistinctEntities(
+            $source_import_ids,
+            ProductDto::ENTITY_TYPE
+        );
+        $plan = $this->application_plan_builder->buildProduct(
+            $staging_import_id,
+            $total_items,
+            isset($script['entities_per_portion']) ? $script['entities_per_portion'] : null,
+            isset($script['max_parallel_processes']) ? $script['max_parallel_processes'] : 1,
+            isset($staging_import['source_type'])
+                ? (string) $staging_import['source_type']
+                : ImportEntityRepository::SOURCE_TYPE_FULL,
+            $mode === ProductApplicationManager::MODE_ACTUALIZE
+        );
+
+        return $this->repository->createImportHierarchy(
+            (int) $staging_import['company_id'],
+            ImportDataCommand::ENTITY_PRODUCTS,
+            isset($script['script_id']) ? (int) $script['script_id'] : 0,
+            $plan
+        );
+    }
+
+    /**
+     * Creates a level-grouped process hierarchy that applies staged categories.
+     *
+     * @param array<string, int|string|null> $script            Cron script data
+     * @param int                            $staging_import_id Staging import identifier
+     *
+     * @return int Parent application import identifier
+     */
+    public function createCategoryApplication(array $script, $staging_import_id)
+    {
+        $staging_import = $this->repository->findImport($staging_import_id);
+        if (!$staging_import) {
+            throw new InvalidArgumentException(__('synchro.exception.staged_category_import_required'));
+        }
+
+        $plan = $this->application_plan_builder->buildCategories(
+            $staging_import_id,
+            $this->repository->findCategoryLevelCounts($staging_import_id),
+            isset($script['entities_per_portion']) ? $script['entities_per_portion'] : null,
+            isset($script['max_parallel_processes']) ? $script['max_parallel_processes'] : 1
+        );
+
+        return $this->repository->createImportHierarchy(
+            (int) $staging_import['company_id'],
+            ImportDataCommand::ENTITY_CATEGORIES,
+            isset($script['script_id']) ? (int) $script['script_id'] : 0,
+            $plan
+        );
+    }
+
+    /**
      * Starts queued child imports while their parents have free slots.
      *
      * @param int $parent_import_id Parent import identifier, zero to process every active parent
@@ -166,17 +249,39 @@ class ImportProcessManager
                     continue;
                 }
 
-                $running_count = $this->repository->countRunningChildren((int) $parent['import_id']);
+                $children = $this->repository->findChildren((int) $parent['import_id']);
+                $current_group = null;
+                foreach ($children as $child) {
+                    if ($child['status'] === ImportEntityRepository::STATUS_COMPLETED) {
+                        continue;
+                    }
+                    $child_group = isset($child['process_group']) ? (int) $child['process_group'] : 0;
+                    $current_group = $current_group === null
+                        ? $child_group
+                        : min($current_group, $child_group);
+                }
+                if ($current_group === null) {
+                    continue;
+                }
+
+                $current_children = array_filter($children, static function (array $child) use ($current_group) {
+                    return (isset($child['process_group']) ? (int) $child['process_group'] : 0) === $current_group;
+                });
+                $running_count = count(array_filter($current_children, static function (array $child) {
+                    return in_array($child['status'], [
+                        ImportEntityRepository::STATUS_PROCESSING,
+                        ImportEntityRepository::STATUS_STOPPING,
+                    ], true);
+                }));
                 $available_slots = max(0, (int) $parent['max_parallel_processes'] - $running_count);
                 if (!$available_slots) {
                     continue;
                 }
 
-                $children = $this->repository->findQueuedChildren(
-                    (int) $parent['import_id'],
-                    $available_slots
-                );
-                foreach ($children as $child) {
+                $queued_children = array_filter($current_children, static function (array $child) {
+                    return $child['status'] === ImportEntityRepository::STATUS_QUEUED;
+                });
+                foreach (array_slice($queued_children, 0, $available_slots) as $child) {
                     $import_id = (int) $child['import_id'];
                     if (!$this->repository->claimChild($import_id)) {
                         continue;
@@ -192,6 +297,33 @@ class ImportProcessManager
                     }
 
                     $launched_count++;
+                }
+
+                $current_children = array_filter(
+                    $this->repository->findChildren((int) $parent['import_id']),
+                    static function (array $child) use ($current_group) {
+                        return (isset($child['process_group']) ? (int) $child['process_group'] : 0)
+                            === $current_group;
+                    }
+                );
+                $has_active_children = (bool) array_filter($current_children, static function (array $child) {
+                    return in_array($child['status'], [
+                        ImportEntityRepository::STATUS_QUEUED,
+                        ImportEntityRepository::STATUS_PROCESSING,
+                        ImportEntityRepository::STATUS_STOPPING,
+                    ], true);
+                });
+                $has_failed_children = (bool) array_filter($current_children, static function (array $child) {
+                    return in_array($child['status'], [
+                        ImportEntityRepository::STATUS_FAILED,
+                        ImportEntityRepository::STATUS_CANCELLED,
+                    ], true);
+                });
+                if (!$has_active_children && $has_failed_children) {
+                    $this->repository->cancelChildrenAfterGroup(
+                        (int) $parent['import_id'],
+                        $current_group
+                    );
                 }
             } finally {
                 $lock->release();
@@ -210,11 +342,19 @@ class ImportProcessManager
      */
     public function prepareBackgroundCommand($import_id)
     {
+        $process = $this->repository->findImport($import_id);
+        $dispatch = 'synchro_import.product_process';
+        if ($process && !empty($process['staging_import_id'])) {
+            $dispatch = $process['entity_type'] === ImportDataCommand::ENTITY_PRODUCTS
+                ? 'synchro_import.product_application_process'
+                : 'synchro_import.category_application_process';
+        }
+
         return sprintf(
             '%s %s %s %s > /dev/null 2>&1 &',
             escapeshellarg($this->php_binary),
             escapeshellarg($this->root_dir . '/' . $this->admin_index),
-            escapeshellarg('--dispatch=synchro_import.product_process'),
+            escapeshellarg('--dispatch=' . $dispatch),
             escapeshellarg('--import_id=' . $import_id)
                 . ' ' . escapeshellarg('--cron_password=' . $this->cron_password)
         );
@@ -321,7 +461,7 @@ class ImportProcessManager
                 ImportEntityRepository::STATUS_CANCELLED,
             ], true)
         ) {
-            throw new TaskInterruptedException('Import process interruption requested');
+            throw new TaskInterruptedException(__('synchro.exception.import_process_interruption_requested'));
         }
     }
 
@@ -401,6 +541,13 @@ class ImportProcessManager
         }
 
         $this->repository->completeChild($import_id);
+        if (
+            !empty($process['staging_import_id'])
+            && isset($process['process_stage'])
+            && $process['process_stage'] === EntityApplicationPlanBuilder::STAGE_APPLY
+        ) {
+            $this->updateApplicationProgress($process);
+        }
         $this->continueParent((int) $process['parent_import_id']);
     }
 
@@ -507,6 +654,11 @@ class ImportProcessManager
             return false;
         }
 
+        $this->repository->retryCancelledChildrenAfterGroup(
+            (int) $process['parent_import_id'],
+            isset($process['process_group']) ? (int) $process['process_group'] : 0
+        );
+
         $this->repository->updateImportStatus(
             (int) $process['parent_import_id'],
             ImportEntityRepository::STATUS_PROCESSING
@@ -581,5 +733,37 @@ class ImportProcessManager
     {
         $this->dispatchPending($parent_import_id);
         $this->reconcileParent($parent_import_id);
+    }
+
+    /**
+     * Updates the cron task with aggregate application progress.
+     *
+     * @param array<string, int|string> $process Completed application process
+     *
+     * @return void
+     */
+    private function updateApplicationProgress(array $process)
+    {
+        $parent = $this->repository->findImport((int) $process['parent_import_id']);
+        if (!$parent) {
+            return;
+        }
+
+        $processed_items = 0;
+        foreach ($this->repository->findChildren((int) $parent['import_id']) as $child) {
+            if (
+                isset($child['process_stage'])
+                && $child['process_stage'] === EntityApplicationPlanBuilder::STAGE_APPLY
+            ) {
+                $processed_items += isset($child['processed_items']) ? (int) $child['processed_items'] : 0;
+            }
+        }
+        $this->cron_manager->updateProgressStatus(
+            (int) $parent['cron_script_id'],
+            __('synchro.application_progress', [
+                '[count]' => $processed_items,
+                '[total]' => (int) $parent['total_items'],
+            ])
+        );
     }
 }

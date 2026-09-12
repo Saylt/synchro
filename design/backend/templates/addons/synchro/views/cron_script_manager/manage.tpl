@@ -105,7 +105,9 @@
 		<td colspan="8">
 			<div class="well well-small">
 				<div>
-					<strong>{__("synchro.import_processes")}</strong>
+					<a class="cm-combination" id="sw_import_processes_{$s.script_id}">
+						<strong>{__("synchro.import_processes")}</strong>
+					</a>
 					<span class="muted">
 						#{$import_process_group.parent.import_id} —
 						{__("synchro.`$import_process_group.parent.status`")};
@@ -113,18 +115,26 @@
 							"[completed]" => $import_process_group.completed_count,
 							"[total]" => $import_process_group.total_count
 						])};
-						{__("synchro.import_plan_summary", [
-							"[items]" => $import_process_group.parent.total_items,
-							"[pages]" => $import_process_group.parent.total_pages,
-							"[limit]" => $import_process_group.parent.page_limit
-						])}
+						{if $import_process_group.parent.staging_import_id}
+							{__("synchro.application_plan_summary", [
+								"[items]" => $import_process_group.parent.total_items,
+								"[processes]" => $import_process_group.parent.max_parallel_processes
+							])}
+						{else}
+							{__("synchro.import_plan_summary", [
+								"[items]" => $import_process_group.parent.total_items,
+								"[pages]" => $import_process_group.parent.total_pages,
+								"[limit]" => $import_process_group.parent.page_limit
+							])}
+						{/if}
 					</span>
 				</div>
+				<div id="import_processes_{$s.script_id}" class="hidden">
 				<table class="table table-condensed table-middle">
 					<thead>
 					<tr>
-						<th>{__("synchro.page_range")}</th>
-						<th>{__("synchro.current_page")}</th>
+						<th>{__("synchro.process_details")}</th>
+						<th>{__("progress")}</th>
 						<th>{__("status")}</th>
 						<th>{__("error")}</th>
 						<th></th>
@@ -133,8 +143,33 @@
 					<tbody>
 					{foreach $import_process_group.children as $import_process}
 						<tr>
-							<td>{$import_process.page_from}–{$import_process.page_to}</td>
-							<td>{$import_process.current_page|default:"—"}</td>
+							<td>
+								{if !$import_process.staging_import_id}
+									{__("synchro.api_pages_range", ["[from]" => $import_process.page_from, "[to]" => $import_process.page_to])}
+								{elseif $import_process.process_stage === "prepare"}
+									{__("synchro.application_stage_prepare")}
+								{elseif $import_process.process_stage === "finalize"}
+									{__("synchro.application_stage_finalize")}
+								{elseif $import_process.entity_type === "categories"}
+									{__("synchro.category_application_range", [
+										"[level]" => $import_process.process_group,
+										"[from]" => $import_process.page_from,
+										"[to]" => $import_process.page_to
+									])}
+								{else}
+									{__("synchro.product_application_range", [
+										"[from]" => $import_process.page_from,
+										"[to]" => $import_process.page_to
+									])}
+								{/if}
+							</td>
+							<td>
+								{if $import_process.staging_import_id}
+									{$import_process.processed_items|default:0}
+								{else}
+									{$import_process.current_page|default:"—"}
+								{/if}
+							</td>
 							<td>{__("synchro.`$import_process.status`")}</td>
 							<td>{$import_process.error_message|default:"—"}</td>
 							<td class="right nowrap">
@@ -152,6 +187,7 @@
 					{/foreach}
 					</tbody>
 				</table>
+				</div>
 			</div>
 		</td>
 	</tr>

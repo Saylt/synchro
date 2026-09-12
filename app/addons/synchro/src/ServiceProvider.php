@@ -6,6 +6,7 @@ use Pimple\Container;
 use Pimple\ServiceProviderInterface;
 use Symfony\Component\Process\PhpExecutableFinder;
 use Tygh\Addons\Synchro\Application\CategoryApplicationManager;
+use Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder;
 use Tygh\Addons\Synchro\Application\ProductApplicationManager;
 use Tygh\Addons\Synchro\Api\ApiClient;
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
@@ -69,12 +70,17 @@ class ServiceProvider implements ServiceProviderInterface
             return new ProductImportRangeBuilder();
         };
 
+        $app['addons.synchro.entity_application_plan_builder'] = static function () {
+            return new EntityApplicationPlanBuilder();
+        };
+
         $app['addons.synchro.import_process_manager'] = static function (Container $app) {
             $php_binary_finder = new PhpExecutableFinder();
 
             return new ImportProcessManager(
                 $app['addons.synchro.repository.import_entity'],
                 $app['addons.synchro.product_import_range_builder'],
+                $app['addons.synchro.entity_application_plan_builder'],
                 $app['addons.synchro.cron_manager'],
                 $app['lock.factory'],
                 (string) Registry::get('config.dir.root'),
@@ -158,8 +164,7 @@ class ServiceProvider implements ServiceProviderInterface
                 $app['addons.synchro.imported_product_feature_reader'],
                 $app['addons.synchro.importers.product_feature'],
                 $app['addons.synchro.importers.product'],
-                $app['addons.synchro.repository.import_entity_map'],
-                $app['addons.synchro.cron_manager']
+                $app['addons.synchro.repository.import_entity_map']
             );
         };
 
@@ -167,8 +172,7 @@ class ServiceProvider implements ServiceProviderInterface
             return new CategoryApplicationManager(
                 $app['addons.synchro.repository.import_entity'],
                 $app['addons.synchro.importers.category'],
-                $app['addons.synchro.repository.import_entity_map'],
-                $app['addons.synchro.cron_manager']
+                $app['addons.synchro.repository.import_entity_map']
             );
         };
 

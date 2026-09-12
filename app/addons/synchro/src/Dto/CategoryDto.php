@@ -35,6 +35,9 @@ class CategoryDto implements RepresentEntityDto
     /** @var int */
     public $product_count;
 
+    /** @var int */
+    public $level = 0;
+
     /** @var array<array-key, string> */
     public $images = [];
 }

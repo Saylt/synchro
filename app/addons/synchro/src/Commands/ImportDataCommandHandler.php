@@ -33,7 +33,9 @@ class ImportDataCommandHandler
     public function handle(ImportDataCommand $command)
     {
         if (!isset($this->convertors[$command->entity_type])) {
-            throw new DeveloperException(sprintf('Undefined convertor for entity type %s', $command->entity_type));
+            throw new DeveloperException(__('synchro.exception.undefined_convertor', [
+                '[entity_type]' => $command->entity_type,
+            ]));
         }
 
         $data = $this->convertors[$command->entity_type]->convert(

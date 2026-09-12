@@ -8,6 +8,7 @@
     {include file="addons/synchro/views/cron_script_manager/components/information.tpl"}
     {include file="addons/synchro/views/cron_script_manager/components/product_import_settings.tpl"}
     {include file="addons/synchro/views/cron_script_manager/components/category_import_settings.tpl"}
+    {include file="addons/synchro/views/cron_script_manager/components/entity_application_settings.tpl"}
     {include file="addons/synchro/views/cron_script_manager/components/period_settings.tpl"}
 
     <div class="buttons-container">

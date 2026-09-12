@@ -107,6 +107,7 @@ CREATE TABLE IF NOT EXISTS ?:synchro_cron_scripts (
     use_portions char(1) NOT NULL DEFAULT 'N',
     pages_per_portion int(11) unsigned NOT NULL DEFAULT '100',
     page_limit int(11) unsigned NOT NULL DEFAULT '200',
+    entities_per_portion int(11) unsigned NOT NULL DEFAULT '30',
     max_parallel_processes int(11) unsigned NOT NULL DEFAULT '3',
     is_test_import char(1) NOT NULL DEFAULT 'N',
     test_page int(11) unsigned NOT NULL DEFAULT '1',
@@ -161,10 +162,13 @@ SQL;
 CREATE TABLE IF NOT EXISTS ?:synchro_imports (
     import_id int(11) unsigned NOT NULL AUTO_INCREMENT,
     parent_import_id int(11) unsigned NOT NULL DEFAULT '0',
+    staging_import_id int(11) unsigned NOT NULL DEFAULT '0',
     cron_script_id int(11) unsigned NOT NULL DEFAULT '0',
     company_id int(11) unsigned NOT NULL DEFAULT '0',
     entity_type varchar(64) NOT NULL DEFAULT '',
     source_type enum('full', 'test') NOT NULL DEFAULT 'full',
+    process_group int(11) unsigned NOT NULL DEFAULT '0',
+    process_stage enum('fetch', 'prepare', 'apply', 'finalize') NOT NULL DEFAULT 'fetch',
     status enum(
         'queued', 'processing', 'completed', 'partial_success',
         'failed', 'stopping', 'cancelled'
@@ -176,15 +180,15 @@ CREATE TABLE IF NOT EXISTS ?:synchro_imports (
     total_items int(11) unsigned NOT NULL DEFAULT '0',
     total_pages int(11) unsigned NOT NULL DEFAULT '0',
     max_parallel_processes int(11) unsigned NOT NULL DEFAULT '1',
+    processed_items int(11) unsigned NOT NULL DEFAULT '0',
     error_message text NOT NULL,
-    application_cursor int(11) unsigned NOT NULL DEFAULT '0',
     created_at int(11) unsigned NOT NULL DEFAULT '0',
     started_at int(11) unsigned NOT NULL DEFAULT '0',
     updated_at int(11) unsigned NOT NULL DEFAULT '0',
     completed_at int(11) unsigned NOT NULL DEFAULT '0',
     PRIMARY KEY (import_id),
     KEY idx_import (company_id, entity_type, status, import_id),
-    KEY idx_parent_status (parent_import_id, status, page_from),
+    KEY idx_parent_status (parent_import_id, status, process_group, page_from),
     KEY idx_cron_parent (cron_script_id, parent_import_id, import_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
@@ -205,13 +209,13 @@ CREATE TABLE IF NOT EXISTS ?:synchro_import_entities (
     company_id int(11) unsigned NOT NULL DEFAULT '0',
     entity_id varchar(128) NOT NULL DEFAULT '',
     entity_type varchar(64) NOT NULL DEFAULT '',
-    application_position int(11) unsigned NOT NULL DEFAULT '0',
+    application_level int(11) unsigned NOT NULL DEFAULT '0',
     entity mediumblob NOT NULL,
     created_at int(11) unsigned NOT NULL DEFAULT '0',
     updated_at int(11) unsigned NOT NULL DEFAULT '0',
     PRIMARY KEY (import_id, entity_type, entity_id),
     KEY idx_entity_type (company_id, entity_type, import_id),
-    KEY idx_application_batch (import_id, entity_type, application_position)
+    KEY idx_application_batch (import_id, entity_type, application_level, entity_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 

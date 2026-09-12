@@ -17,10 +17,6 @@
             <label for="synchro_page_limit" class="control-label">{__("synchro.page_limit")}</label>
             <div class="controls"><input type="number" min="1" id="synchro_page_limit" name="script_data[page_limit]" value="{$script_data.page_limit|default:200}" class="input-small"></div>
         </div>
-        <div class="control-group synchro-portion-input{if $script_data.use_portions !== "Y" || $script_data.is_test_import === "Y"} hidden{/if}">
-            <label for="synchro_max_parallel_processes" class="control-label">{__("synchro.max_parallel_processes")}</label>
-            <div class="controls"><input type="number" min="1" id="synchro_max_parallel_processes" name="script_data[max_parallel_processes]" value="{$script_data.max_parallel_processes|default:3}" class="input-small"></div>
-        </div>
         <div class="control-group">
             <label for="synchro_is_test_import" class="control-label">{__("synchro.test_import")}</label>
             <div class="controls">

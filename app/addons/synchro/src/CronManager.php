@@ -2,6 +2,7 @@
 
 namespace Tygh\Addons\Synchro;
 
+use Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Database\Connection;
 use Tygh\Lock\Factory;
@@ -415,11 +416,13 @@ class CronManager
             exec($command, $output, $exit_code);
             $execution_time = time() - $start_time;
 
-            $this->logging->info((string) $script['script'], __('synchro.task_execution_finished'), [
-                'execution_time' => $execution_time,
-                'output'         => $output,
-                'exit_code'      => $exit_code,
-            ]);
+            if (empty($script['runtime_import_id']) || $exit_code !== 0) {
+                $this->logging->info((string) $script['script'], __('synchro.task_execution_finished'), [
+                    'execution_time' => $execution_time,
+                    'output'         => $output,
+                    'exit_code'      => $exit_code,
+                ]);
+            }
 
             return $exit_code === 0;
         } finally {
@@ -716,7 +719,7 @@ class CronManager
         }
 
         $script = $this->database->getRow(
-            'SELECT run_mode, inner_status FROM ?:?p WHERE script_id = ?i',
+            'SELECT script, run_mode, inner_status, last_launch FROM ?:?p WHERE script_id = ?i',
             self::TABLE_NAME,
             $script_id
         );
@@ -731,17 +734,29 @@ class CronManager
             ? 'scheduled'
             : $result_status;
 
-        return (bool) $this->database->query(
-            'UPDATE ?:?p SET inner_status = ?s WHERE script_id = ?i AND inner_status IN (?a)',
+        $is_finalized = (bool) $this->database->query(
+            'UPDATE ?:?p SET inner_status = ?s, progress_status = ?s'
+            . ' WHERE script_id = ?i AND inner_status IN (?a)',
             self::TABLE_NAME,
             $inner_status,
+            __('synchro.task_finished_at', [
+                '[time]' => date('Y-m-d H:i:s', TIME),
+            ]),
             $script_id,
             ['waiting_children', 'stopping']
         );
+        if ($is_finalized && isset($script['script'])) {
+            $this->logging->info((string) $script['script'], __('synchro.task_execution_finished'), [
+                'execution_time' => max(0, TIME - (int) $script['last_launch']),
+                'result_status'  => $result_status,
+            ]);
+        }
+
+        return $is_finalized;
     }
 
     /**
-     * Queues the post-process configured for a completed product import.
+     * Queues the post-process configured for a completed import.
      *
      * @param int    $script_id        Source cron task identifier
      * @param int    $parent_import_id Parent import identifier
@@ -753,7 +768,8 @@ class CronManager
     public function queuePostProcess($script_id, $parent_import_id, $source_type, $result_status)
     {
         $source_script = $this->database->getRow(
-            'SELECT post_process FROM ?:?p WHERE script_id = ?i',
+            'SELECT post_process, entities_per_portion, max_parallel_processes'
+            . ' FROM ?:?p WHERE script_id = ?i',
             self::TABLE_NAME,
             $script_id
         );
@@ -815,7 +831,18 @@ class CronManager
             return false;
         }
 
-        $target_script_id = $this->claimPostProcessTask($target_dispatch, $parent_import_id);
+        $entities_per_portion = isset($source_script['entities_per_portion'])
+            ? max(1, (int) $source_script['entities_per_portion'])
+            : EntityApplicationPlanBuilder::DEFAULT_ENTITIES_PER_PORTION;
+        $max_parallel_processes = isset($source_script['max_parallel_processes'])
+            ? max(1, (int) $source_script['max_parallel_processes'])
+            : ProductImportRangeBuilder::DEFAULT_MAX_PARALLEL_PROCESSES;
+        $target_script_id = $this->claimPostProcessTask(
+            $target_dispatch,
+            $parent_import_id,
+            $entities_per_portion,
+            $max_parallel_processes
+        );
         if (!$target_script_id) {
             return false;
         }
@@ -830,24 +857,32 @@ class CronManager
     /**
      * Atomically reserves a post-process task for an import.
      *
-     * @param string $dispatch  Target controller dispatch
-     * @param int    $import_id Source import identifier
+     * @param string $dispatch               Target controller dispatch
+     * @param int    $import_id              Source import identifier
+     * @param int    $entities_per_portion   Entities per application process
+     * @param int    $max_parallel_processes Maximum parallel processes
      *
      * @return int Queued cron task identifier
      */
-    private function claimPostProcessTask($dispatch, $import_id)
-    {
+    private function claimPostProcessTask(
+        $dispatch,
+        $import_id,
+        $entities_per_portion,
+        $max_parallel_processes
+    ) {
         $target_script = $this->database->getRow(
             'SELECT * FROM ?:?p WHERE script = ?s LIMIT 1',
             self::TABLE_NAME,
             $dispatch
         );
         $task_data = [
-            'status'            => 'A',
-            'run_mode'          => self::RUN_MODE_ONCE,
-            'inner_status'      => 'queued',
-            'runtime_import_id' => $import_id,
-            'last_launch'       => TIME,
+            'status'                 => 'A',
+            'run_mode'               => self::RUN_MODE_ONCE,
+            'inner_status'           => 'queued',
+            'runtime_import_id'      => $import_id,
+            'entities_per_portion'   => $entities_per_portion,
+            'max_parallel_processes' => $max_parallel_processes,
+            'last_launch'            => TIME,
         ];
 
         if ($target_script) {
@@ -979,7 +1014,7 @@ class CronManager
             $script_id
         );
         if ($inner_status === 'stopping') {
-            throw new TaskInterruptedException('Cron task interruption requested');
+            throw new TaskInterruptedException(__('synchro.exception.cron_task_interruption_requested'));
         }
     }
 
@@ -1247,6 +1282,15 @@ class CronManager
             ? $script_data['run_mode']
             : self::RUN_MODE_PERIODIC;
 
+        if (in_array($script_data['script'], ['synchro_import.products', 'synchro_import.categories'], true)) {
+            $script_data['entities_per_portion'] = isset($script_data['entities_per_portion'])
+                ? max(1, (int) $script_data['entities_per_portion'])
+                : EntityApplicationPlanBuilder::DEFAULT_ENTITIES_PER_PORTION;
+            $script_data['max_parallel_processes'] = isset($script_data['max_parallel_processes'])
+                ? max(1, (int) $script_data['max_parallel_processes'])
+                : ProductImportRangeBuilder::DEFAULT_MAX_PARALLEL_PROCESSES;
+        }
+
         if ($script_data['script'] === 'synchro_import.products') {
             $script_data['use_portions'] = isset($script_data['use_portions'])
                 && $script_data['use_portions'] === 'Y' ? 'Y' : 'N';
@@ -1261,12 +1305,6 @@ class CronManager
                 isset($script_data['page_limit'])
                     ? (int) $script_data['page_limit']
                     : ProductImportRangeBuilder::DEFAULT_PAGE_LIMIT
-            );
-            $script_data['max_parallel_processes'] = max(
-                1,
-                isset($script_data['max_parallel_processes'])
-                    ? (int) $script_data['max_parallel_processes']
-                    : ProductImportRangeBuilder::DEFAULT_MAX_PARALLEL_PROCESSES
             );
             $script_data['is_test_import'] = isset($script_data['is_test_import'])
                 && $script_data['is_test_import'] === 'Y' ? 'Y' : 'N';
@@ -1340,6 +1378,7 @@ class CronManager
             'use_portions',
             'pages_per_portion',
             'page_limit',
+            'entities_per_portion',
             'max_parallel_processes',
             'is_test_import',
             'test_page',

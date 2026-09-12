@@ -180,6 +180,122 @@ msgctxt "Languages::synchro.task_execution_finished"
 msgid "Task execution finished"
 msgstr "Task execution finished"
 
+msgctxt "Languages::synchro.task_finished_at"
+msgid "Task finished at [time]"
+msgstr "Task finished at [time]"
+
+msgctxt "Languages::synchro.exception.application_interruption_requested"
+msgid "Application interruption requested"
+msgstr "Application interruption requested"
+
+msgctxt "Languages::synchro.exception.import_task_interruption_requested"
+msgid "Import task interruption requested"
+msgstr "Import task interruption requested"
+
+msgctxt "Languages::synchro.exception.cron_task_interruption_requested"
+msgid "Cron task interruption requested"
+msgstr "Cron task interruption requested"
+
+msgctxt "Languages::synchro.exception.staged_product_import_required"
+msgid "A staged product import is required"
+msgstr "A staged product import is required"
+
+msgctxt "Languages::synchro.exception.staged_category_import_required"
+msgid "A staged category import is required"
+msgstr "A staged category import is required"
+
+msgctxt "Languages::synchro.exception.import_process_interruption_requested"
+msgid "Import process interruption requested"
+msgstr "Import process interruption requested"
+
+msgctxt "Languages::synchro.exception.unknown_category_application_stage"
+msgid "Unknown category application stage"
+msgstr "Unknown category application stage"
+
+msgctxt "Languages::synchro.exception.category_full_update_timestamp_not_stored"
+msgid "Category full update timestamp cannot be stored"
+msgstr "Category full update timestamp cannot be stored"
+
+msgctxt "Languages::synchro.exception.category_application_progress_not_stored"
+msgid "Category application progress cannot be stored"
+msgstr "Category application progress cannot be stored"
+
+msgctxt "Languages::synchro.exception.missing_categories_cannot_be_disabled"
+msgid "Missing categories cannot be disabled"
+msgstr "Missing categories cannot be disabled"
+
+msgctxt "Languages::synchro.exception.category_application_process_required"
+msgid "A category application process with completed staging data is required"
+msgstr "A category application process with completed staging data is required"
+
+msgctxt "Languages::synchro.exception.unknown_product_application_stage"
+msgid "Unknown product application stage"
+msgstr "Unknown product application stage"
+
+msgctxt "Languages::synchro.exception.product_actualization_timestamp_not_stored"
+msgid "Product actualization timestamp cannot be stored"
+msgstr "Product actualization timestamp cannot be stored"
+
+msgctxt "Languages::synchro.exception.product_full_update_timestamp_not_stored"
+msgid "Product full update timestamp cannot be stored"
+msgstr "Product full update timestamp cannot be stored"
+
+msgctxt "Languages::synchro.exception.products_could_not_be_applied"
+msgid "One or more products could not be applied"
+msgstr "One or more products could not be applied"
+
+msgctxt "Languages::synchro.exception.product_application_progress_not_stored"
+msgid "Product application progress cannot be stored"
+msgstr "Product application progress cannot be stored"
+
+msgctxt "Languages::synchro.exception.product_archiving_mark_not_stored"
+msgid "Product archiving mark cannot be stored"
+msgstr "Product archiving mark cannot be stored"
+
+msgctxt "Languages::synchro.exception.product_application_process_required"
+msgid "A product application process with staging data is required"
+msgstr "A product application process with staging data is required"
+
+msgctxt "Languages::synchro.exception.unknown_product_application_mode"
+msgid "Unknown product application mode"
+msgstr "Unknown product application mode"
+
+msgctxt "Languages::synchro.exception.full_source_import_required"
+msgid "A full source import is required"
+msgstr "A full source import is required"
+
+msgctxt "Languages::synchro.exception.test_source_import_required"
+msgid "A test source import is required"
+msgstr "A test source import is required"
+
+msgctxt "Languages::synchro.exception.source_import_not_completed"
+msgid "The source import has not completed successfully"
+msgstr "The source import has not completed successfully"
+
+msgctxt "Languages::synchro.exception.command_must_be_object"
+msgid "Command must be an object"
+msgstr "Command must be an object"
+
+msgctxt "Languages::synchro.exception.undefined_command_handler"
+msgid "Undefined handler for command [command]"
+msgstr "Undefined handler for command [command]"
+
+msgctxt "Languages::synchro.exception.unrecognized_command_middleware"
+msgid "Unrecognized middleware for command [command]"
+msgstr "Unrecognized middleware for command [command]"
+
+msgctxt "Languages::synchro.exception.undefined_convertor"
+msgid "Undefined convertor for entity type [entity_type]"
+msgstr "Undefined convertor for entity type [entity_type]"
+
+msgctxt "Languages::synchro.exception.stored_entity_type_mismatch"
+msgid "The stored entity type does not match the requested type"
+msgstr "The stored entity type does not match the requested type"
+
+msgctxt "Languages::synchro.exception.stored_entity_not_category"
+msgid "The stored entity is not a category"
+msgstr "The stored entity is not a category"
+
 msgctxt "Languages::synchro.task_has_been_launched"
 msgid "Task has been launched in background"
 msgstr "Task has been launched in background"
@@ -488,6 +604,26 @@ msgctxt "Languages::synchro.max_parallel_processes"
 msgid "Maximum parallel processes"
 msgstr "Maximum parallel processes"
 
+msgctxt "Languages::synchro.application_settings"
+msgid "Application settings"
+msgstr "Application settings"
+
+msgctxt "Languages::synchro.products_per_application_portion"
+msgid "Products per application portion"
+msgstr "Products per application portion"
+
+msgctxt "Languages::synchro.products_per_application_portion_description"
+msgid "Number of products processed by one child application process."
+msgstr "Number of products processed by one child application process."
+
+msgctxt "Languages::synchro.categories_per_application_portion"
+msgid "Categories per application portion"
+msgstr "Categories per application portion"
+
+msgctxt "Languages::synchro.categories_per_application_portion_description"
+msgid "Number of categories processed by one child application process."
+msgstr "Number of categories processed by one child application process."
+
 msgctxt "Languages::synchro.test_import"
 msgid "Test import"
 msgstr "Test import"
@@ -555,6 +691,42 @@ msgstr "completed [completed] of [total]"
 msgctxt "Languages::synchro.import_plan_summary"
 msgid "[items] products, [pages] pages, limit [limit]"
 msgstr "[items] products, [pages] pages, limit [limit]"
+
+msgctxt "Languages::synchro.application_plan_summary"
+msgid "[items] items, up to [processes] parallel processes"
+msgstr "[items] items, up to [processes] parallel processes"
+
+msgctxt "Languages::synchro.process_details"
+msgid "Process"
+msgstr "Process"
+
+msgctxt "Languages::synchro.api_pages_range"
+msgid "API pages [from]–[to]"
+msgstr "API pages [from]–[to]"
+
+msgctxt "Languages::synchro.application_stage_prepare"
+msgid "Prepare product features"
+msgstr "Prepare product features"
+
+msgctxt "Languages::synchro.application_stage_finalize"
+msgid "Finalize application"
+msgstr "Finalize application"
+
+msgctxt "Languages::synchro.product_application_range"
+msgid "Products [from]–[to]"
+msgstr "Products [from]–[to]"
+
+msgctxt "Languages::synchro.category_application_range"
+msgid "Level [level], categories [from]–[to]"
+msgstr "Level [level], categories [from]–[to]"
+
+msgctxt "Languages::synchro.product_application_process"
+msgid "Product application process"
+msgstr "Product application process"
+
+msgctxt "Languages::synchro.category_application_process"
+msgid "Category application process"
+msgstr "Category application process"
 
 msgctxt "Languages::synchro.product_import_error.product_not_found"
 msgid "The mapped product for external ID [external_id] was not found."
@@ -647,6 +819,10 @@ msgstr "Queues the selected processing task as soon as the API import finishes. 
 msgctxt "Languages::synchro.applied_products"
 msgid "Applied products: [count]"
 msgstr "Applied products: [count]"
+
+msgctxt "Languages::synchro.application_progress"
+msgid "Applied [count] of [total] items"
+msgstr "Applied [count] of [total] items"
 
 msgctxt "Languages::synchro.applied_categories"
 msgid "Imported [count] of [total] categories"

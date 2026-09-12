@@ -32,7 +32,7 @@ class CommandBus
     public function dispatch(object $command)
     {
         if (!is_object($command)) {
-            throw new DeveloperException('Command must be an object');
+            throw new DeveloperException(__('synchro.exception.command_must_be_object'));
         }
 
         return $this->handleCommand($command);
@@ -48,7 +48,9 @@ class CommandBus
         $class = $this->getClassName($command);
 
         if (!isset($this->schema[$class])) {
-            throw new DeveloperException(sprintf('Undefined handler for command %s', $class));
+            throw new DeveloperException(__('synchro.exception.undefined_command_handler', [
+                '[command]' => $class,
+            ]));
         }
 
         return $this->schema[$class];
@@ -64,7 +66,9 @@ class CommandBus
         $schema = $this->getCommandSchema($command);
 
         if (!isset($schema['handler']) || !is_callable($schema['handler'])) {
-            throw new DeveloperException(sprintf('Undefined handler for command %s', $this->getClassName($command)));
+            throw new DeveloperException(__('synchro.exception.undefined_command_handler', [
+                '[command]' => $this->getClassName($command),
+            ]));
         }
 
         return $schema['handler'];
@@ -85,9 +89,9 @@ class CommandBus
 
         foreach ($schema['middleware'] as $middleware) {
             if (!is_callable($middleware)) {
-                throw new DeveloperException(
-                    sprintf('Unrecognized middleware for command %s', $this->getClassName($command))
-                );
+                throw new DeveloperException(__('synchro.exception.unrecognized_command_middleware', [
+                    '[command]' => $this->getClassName($command),
+                ]));
             }
         }
 

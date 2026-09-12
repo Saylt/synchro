@@ -22,13 +22,32 @@ $source_import_id = isset($_REQUEST['import_id']) && is_scalar($_REQUEST['import
     : 0;
 $log_source = 'synchro_import.' . $mode;
 
-if ($mode === 'apply_categories') {
-    if (!$source_import_id) {
+$product_application_modes = [
+    'apply_products'      => ProductApplicationManager::MODE_FULL,
+    'apply_test_products' => ProductApplicationManager::MODE_TEST,
+    'actualize_products'  => ProductApplicationManager::MODE_ACTUALIZE,
+];
+if ($mode === 'apply_categories' || isset($product_application_modes[$mode])) {
+    $script = $cron_script_id ? $cron_manager->getCronScriptData($cron_script_id) : [];
+    if (!$source_import_id || !$script) {
         return [CONTROLLER_STATUS_NO_PAGE];
     }
 
     try {
-        ServiceProvider::getCategoryApplicationManager()->apply($source_import_id, $cron_script_id);
+        $parent_import_id = $mode === 'apply_categories'
+            ? $import_process_manager->createCategoryApplication($script, $source_import_id)
+            : $import_process_manager->createProductApplication(
+                $script,
+                $source_import_id,
+                $product_application_modes[$mode]
+            );
+        if (!$cron_manager->markTaskWaitingForChildren($cron_script_id)) {
+            $import_process_manager->requestParentInterruption($cron_script_id);
+
+            throw new TaskInterruptedException(__('synchro.exception.application_interruption_requested'));
+        }
+        $import_process_manager->dispatchPending($parent_import_id);
+        $import_process_manager->reconcileParent($parent_import_id);
     } catch (TaskInterruptedException $exception) {
         $logging->error($log_source, $exception->getMessage());
 
@@ -38,61 +57,77 @@ if ($mode === 'apply_categories') {
     return [CONTROLLER_STATUS_NO_CONTENT];
 }
 
-if ($mode === 'apply_products') {
-    if (!$source_import_id) {
+$product_worker_modes = [
+    'synchro_import.apply_products'      => ProductApplicationManager::MODE_FULL,
+    'synchro_import.apply_test_products' => ProductApplicationManager::MODE_TEST,
+    'synchro_import.actualize_products'  => ProductApplicationManager::MODE_ACTUALIZE,
+];
+if ($mode === 'product_application_process' || $mode === 'category_application_process') {
+    @ini_set('memory_limit', '256M');
+
+    if (
+        !defined('CONSOLE')
+        || !isset($_REQUEST['cron_password'])
+        || !is_scalar($_REQUEST['cron_password'])
+        || !$cron_manager->isValidPassword($_REQUEST['cron_password'])
+    ) {
+        die(__('access_denied'));
+    }
+
+    $process = $import_process_manager->getProcess($source_import_id);
+    $expected_entity_type = $mode === 'product_application_process'
+        ? ImportDataCommand::ENTITY_PRODUCTS
+        : ImportDataCommand::ENTITY_CATEGORIES;
+    if (
+        !$process
+        || !$process['parent_import_id']
+        || !$process['staging_import_id']
+        || $process['entity_type'] !== $expected_entity_type
+        || $process['status'] !== ImportEntityRepository::STATUS_PROCESSING
+    ) {
         return [CONTROLLER_STATUS_NO_PAGE];
     }
 
-    try {
-        ServiceProvider::getProductApplicationManager()->apply(
-            $source_import_id,
-            ProductApplicationManager::MODE_FULL,
-            $cron_script_id
-        );
-    } catch (TaskInterruptedException $exception) {
-        $logging->error($log_source, $exception->getMessage());
-
-        return [CONTROLLER_STATUS_NO_CONTENT];
-    }
-
-    return [CONTROLLER_STATUS_NO_CONTENT];
-}
-
-if ($mode === 'apply_test_products') {
-    if (!$source_import_id) {
+    $script = $cron_manager->getCronScriptData($process['cron_script_id']);
+    if (
+        !$script
+        || !isset($script['script'])
+        || (
+            $mode === 'product_application_process'
+            && !isset($product_worker_modes[$script['script']])
+        )
+        || (
+            $mode === 'category_application_process'
+            && $script['script'] !== 'synchro_import.apply_categories'
+        )
+    ) {
         return [CONTROLLER_STATUS_NO_PAGE];
     }
 
+    Registry::set('runtime.company_id', $process['company_id']);
+
     try {
-        ServiceProvider::getProductApplicationManager()->apply(
-            $source_import_id,
-            ProductApplicationManager::MODE_TEST,
-            $cron_script_id
-        );
+        $import_process_manager->ensureProcessCanContinue($source_import_id);
+        if ($mode === 'product_application_process') {
+            ServiceProvider::getProductApplicationManager()->process(
+                $process,
+                $product_worker_modes[$script['script']]
+            );
+        } else {
+            ServiceProvider::getCategoryApplicationManager()->process($process);
+        }
+        $import_process_manager->ensureProcessCanContinue($source_import_id);
+        $import_process_manager->completeProcess($source_import_id);
     } catch (TaskInterruptedException $exception) {
+        $import_process_manager->cancelProcess($source_import_id);
         $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
-    }
-
-    return [CONTROLLER_STATUS_NO_CONTENT];
-}
-
-if ($mode === 'actualize_products') {
-    if (!$source_import_id) {
-        return [CONTROLLER_STATUS_NO_PAGE];
-    }
-
-    try {
-        ServiceProvider::getProductApplicationManager()->apply(
-            $source_import_id,
-            ProductApplicationManager::MODE_ACTUALIZE,
-            $cron_script_id
-        );
-    } catch (TaskInterruptedException $exception) {
+    } catch (Throwable $exception) {
+        $import_process_manager->failProcess($source_import_id, $exception->getMessage());
         $logging->error($log_source, $exception->getMessage());
 
-        return [CONTROLLER_STATUS_NO_CONTENT];
+        throw $exception;
     }
 
     return [CONTROLLER_STATUS_NO_CONTENT];
@@ -123,7 +158,7 @@ if ($mode === 'products') {
         if (!$cron_manager->markTaskWaitingForChildren($cron_script_id)) {
             $import_process_manager->requestParentInterruption($cron_script_id);
 
-            throw new TaskInterruptedException('Import task interruption requested');
+            throw new TaskInterruptedException(__('synchro.exception.import_task_interruption_requested'));
         }
         $import_process_manager->dispatchPending($parent_import_id);
         $import_process_manager->reconcileParent($parent_import_id);
@@ -137,7 +172,6 @@ if ($mode === 'products') {
 }
 
 if ($mode === 'product_process') {
-    @set_time_limit(0);
     @ini_set('memory_limit', '256M');
 
     if (
@@ -155,26 +189,26 @@ if ($mode === 'product_process') {
     $process = $import_process_manager->getProcess($import_id);
     if (
         !$process
-        || !(int) $process['parent_import_id']
+        || !$process['parent_import_id']
         || $process['entity_type'] !== ImportDataCommand::ENTITY_PRODUCTS
         || $process['status'] !== $import_repository::STATUS_PROCESSING
     ) {
         return [CONTROLLER_STATUS_NO_PAGE];
     }
 
-    Registry::set('runtime.company_id', (int) $process['company_id']);
+    Registry::set('runtime.company_id', $process['company_id']);
     $command_bus = ServiceProvider::getCommandBus();
 
     try {
-        for ($page = (int) $process['page_from']; $page <= (int) $process['page_to']; $page++) {
+        for ($page = $process['page_from']; $page <= $process['page_to']; $page++) {
             $import_process_manager->ensureProcessCanContinue($import_id);
             $import_process_manager->updateProgress($import_id, $page);
             $data = $api_client->getData(ImportDataCommand::ENTITY_PRODUCTS, [
                 'page'  => $page,
-                'limit' => (int) $process['page_limit'],
+                'limit' => $process['page_limit'],
             ]);
             $cron_manager->updateProgressStatus(
-                (int) $process['cron_script_id'],
+                $process['cron_script_id'],
                 __('synchro.importing_products', [
                     '[page]'  => $page,
                     '[pages]' => $process['page_to'],
@@ -185,7 +219,7 @@ if ($mode === 'product_process') {
                     ImportDataCommand::ENTITY_PRODUCTS,
                     $data,
                     $import_id,
-                    (int) $process['cron_script_id'],
+                    $process['cron_script_id'],
                     $import_id
                 )
             );

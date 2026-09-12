@@ -11,6 +11,10 @@
         $('#synchro_product_post_process', $form).prop('disabled', !is_product_import);
         $('#synchro_category_import_settings', $form).toggle(is_category_import);
         $('#synchro_category_post_process', $form).prop('disabled', !is_category_import);
+        $('#synchro_entity_application_settings', $form).toggle(is_product_import || is_category_import);
+        $('.synchro-product-application-label', $form).toggle(is_product_import);
+        $('.synchro-category-application-label', $form).toggle(is_category_import);
+        $('#synchro_application_parallel_setting', $form).toggle(!(is_product_import && is_test_import));
         $('#synchro_test_page_setting', $form).toggle(is_test_import);
         $('#synchro_page_limit_setting', $form).toggle(!is_test_import);
         $('.synchro-portion-setting', $form).toggle(!is_test_import);
