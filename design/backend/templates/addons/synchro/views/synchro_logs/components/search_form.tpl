@@ -23,7 +23,12 @@
 
             <div class="sidebar-field">
                 <label for="elm_log_source">{__("synchro.log_source")}</label>
-                <input type="text" name="source" id="elm_log_source" value="{$search.source|default:""|escape}" />
+                {$selected_sources = $search.source|default:[]}
+                <select name="source[]" id="elm_log_source" multiple="multiple" size="5">
+                    {foreach $log_sources as $source}
+                        <option value="{$source|escape}"{if $source|in_array:$selected_sources} selected="selected"{/if}>{$source|escape}</option>
+                    {/foreach}
+                </select>
             </div>
         {/capture}
 

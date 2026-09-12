@@ -67,7 +67,7 @@
         </tbody>
     </table>
 
-    {include file="common/pagination.tpl"}
+    {include file="common/pagination.tpl" save_current_page=true}
 
     {capture name="sidebar"}
         {include file="addons/synchro/views/synchro_logs/components/search_form.tpl"}

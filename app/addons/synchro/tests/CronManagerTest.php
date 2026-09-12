@@ -58,6 +58,67 @@ class CronManagerTest extends ATestCase
         ], $this->createManager($database)->getSetElements('inner_status', true));
     }
 
+    public function testOrdersPostProcessTaskImmediatelyAfterSourceTask()
+    {
+        $scripts = [
+            15 => [
+                'script_id'    => 15,
+                'script'       => 'synchro_import.categories',
+                'post_process' => 'synchro_import.apply_categories',
+            ],
+            30 => [
+                'script_id'    => 30,
+                'script'       => 'synchro_import.products',
+                'post_process' => '',
+            ],
+            20 => [
+                'script_id'    => 20,
+                'script'       => 'synchro_import.apply_categories',
+                'post_process' => '',
+            ],
+        ];
+
+        $ordered_scripts = $this->createManager($this->createDatabase())
+            ->orderCronScriptsByDependencies($scripts);
+
+        $this->assertSame([15, 20, 30], array_keys($ordered_scripts));
+        $this->assertSame(0, $ordered_scripts[15]['dependency_level']);
+        $this->assertSame(1, $ordered_scripts[20]['dependency_level']);
+        $this->assertSame('synchro_import.categories', $ordered_scripts[20]['dependency_source']);
+    }
+
+    public function testGetsCurrentStatusForRequestedCronTasks()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('getHash')
+            ->with(
+                'SELECT script_id, last_launch, inner_status, progress_status FROM ?:?p'
+                . ' WHERE script_id IN (?n) AND script IN (?a)',
+                'script_id',
+                CronManager::TABLE_NAME,
+                [15, 20],
+                ['synchro_import.products']
+            )
+            ->willReturn([
+                15 => [
+                    'script_id'       => '15',
+                    'last_launch'     => '1757588400',
+                    'inner_status'    => 'in_progress',
+                    'progress_status' => 'Importing 30 of 100 products',
+                ],
+            ]);
+
+        $this->assertSame([
+            15 => [
+                'script_id'       => 15,
+                'last_launch'     => 1757588400,
+                'inner_status'    => 'in_progress',
+                'progress_status' => 'Importing 30 of 100 products',
+            ],
+        ], $this->createManager($database)->getCronScriptStatuses([15, 20]));
+    }
+
     public function testTestProductImportSettingsAreNormalized()
     {
         $database = $this->createDatabase();
@@ -1026,12 +1087,15 @@ class CronManagerTest extends ATestCase
                     'queued',
                 ],
                 [
-                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s)'
+                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s), progress_status = ?s'
                     . ' WHERE script_id = ?i AND inner_status IN (?a)',
                     CronManager::TABLE_NAME,
                     'stopping',
                     'cancelled',
                     'completed',
+                    'synchro.task_finished_at' . json_encode([
+                        '[time]' => date('Y-m-d H:i:s', TIME),
+                    ]),
                     15,
                     ['in_progress', 'stopping'],
                 ]
@@ -1123,12 +1187,15 @@ class CronManagerTest extends ATestCase
                     'queued',
                 ],
                 [
-                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s)'
+                    'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s), progress_status = ?s'
                     . ' WHERE script_id = ?i AND inner_status IN (?a)',
                     CronManager::TABLE_NAME,
                     'stopping',
                     'cancelled',
                     'failed',
+                    'synchro.task_finished_at' . json_encode([
+                        '[time]' => date('Y-m-d H:i:s', TIME),
+                    ]),
                     15,
                     ['in_progress', 'stopping'],
                 ]
@@ -1165,7 +1232,7 @@ class CronManagerTest extends ATestCase
     {
         return $this->getMockBuilder(Connection::class)
             ->disableOriginalConstructor()
-            ->setMethods(['getField', 'getRow', 'query'])
+            ->setMethods(['getField', 'getHash', 'getRow', 'query'])
             ->getMock();
     }
 

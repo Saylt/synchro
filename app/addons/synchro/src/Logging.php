@@ -120,8 +120,8 @@ class Logging
     /**
      * Gets journal entries by the specified search parameters.
      *
-     * @param array<string, int|string> $params         Search parameters
-     * @param int                       $items_per_page Number of entries per page
+     * @param array<string, array<int, string>|int|string|null> $params         Search parameters
+     * @param int                                               $items_per_page Number of entries per page
      *
      * @return array{array<int, array<string, int|string>>, array<string, int|string>}
      */
@@ -133,8 +133,14 @@ class Logging
         if (isset($params['level']) && in_array($params['level'], $this->getLevels(), true)) {
             $condition .= $this->database->quote(' AND l.level = ?s', $params['level']);
         }
-        if (isset($params['source']) && trim($params['source']) !== '') {
-            $condition .= $this->database->quote(' AND l.source LIKE ?l', '%' . trim($params['source']) . '%');
+        $params['source'] = array_values(array_filter(
+            isset($params['source']) ? (array) $params['source'] : [],
+            static function ($source) {
+                return is_string($source) && trim($source) !== '';
+            }
+        ));
+        if ($params['source']) {
+            $condition .= $this->database->quote(' AND l.source IN (?a)', $params['source']);
         }
         if (!empty($params['period']) && $params['period'] !== 'A') {
             list($params['time_from'], $params['time_to']) = fn_create_periods($params);
@@ -165,6 +171,8 @@ class Logging
                 self::TABLE_NAME,
                 $condition
             );
+            $params['items_per_page'] = $items_per_page;
+            $params['total_items'] = (int) $total;
             $limit = db_paginate($params['page'], $items_per_page, $total);
         }
         $logs = $this->database->getHash(
@@ -179,6 +187,19 @@ class Logging
         $params['sort_order'] = $params['sort_order'] === 'asc' ? 'desc' : 'asc';
 
         return [$logs, $params];
+    }
+
+    /**
+     * Gets log sources available for filtering.
+     *
+     * @return array<string>
+     */
+    public function getSources()
+    {
+        return $this->database->getColumn(
+            'SELECT DISTINCT source FROM ?:?p WHERE 1 ORDER BY source',
+            self::TABLE_NAME
+        );
     }
 
     /**

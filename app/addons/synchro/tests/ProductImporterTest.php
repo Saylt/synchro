@@ -25,6 +25,7 @@ namespace Tygh\Addons\Synchro\Tests\Unit {
 
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Dto\CategoryDto;
+use Tygh\Addons\Synchro\Dto\ManufacturerDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Dto\WarehouseDto;
@@ -364,6 +365,53 @@ class ProductImporterTest extends ATestCase
         $this->assertSame(['77'], $product_ids['fully_updated_external_ids']);
         $this->assertSame([57 => 901], $updated_data['product_features']);
         $this->assertSame([], $logged_errors);
+    }
+
+    public function testAssignsResolvedManufacturerAsBrandFeature()
+    {
+        $product = $this->createProduct();
+        $manufacturer = new ManufacturerDto();
+        $manufacturer->id = 10;
+        $manufacturer->name = 'ACME';
+        $product->manufacturer = $manufacturer;
+        $mapping_repository = $this->createMappingRepository();
+        $mapping_repository->expects($this->exactly(3))
+            ->method('findByExternalIds')
+            ->withConsecutive(
+                [1, ProductDto::ENTITY_TYPE, ['77']],
+                [1, ManufacturerDto::ENTITY_TYPE, ['10']],
+                [1, CategoryDto::ENTITY_TYPE, ['10']]
+            )
+            ->willReturnOnConsecutiveCalls([], ['10' => ['local_id' => 901]], ['10' => ['local_id' => 501]]);
+        $mapping_repository->expects($this->once())->method('save');
+        $feature_mapping_repository = $this->createFeatureMappingRepository();
+        $feature_mapping_repository->expects($this->once())
+            ->method('findByExternalIds')
+            ->with(1, [ManufacturerDto::ENTITY_TYPE])
+            ->willReturn([ManufacturerDto::ENTITY_TYPE => 57]);
+        $warehouse_importer = $this->createWarehouseImporter();
+        $warehouse_importer->method('import')->willReturn(12);
+        $stock_updater = $this->createProductStockUpdater();
+        $stock_updater->expects($this->once())->method('update');
+        $image_importer = $this->createImageImporter();
+        $image_importer->method('findByObjectIds')->willReturn([]);
+        $image_importer->method('import')->willReturn(new OperationResult(true));
+        self::$update_product = static function (array $product_data) use (&$updated_data) {
+            $updated_data = $product_data;
+
+            return 100;
+        };
+
+        (new ProductImporter(
+            $this->createDatabase(),
+            $mapping_repository,
+            $feature_mapping_repository,
+            $warehouse_importer,
+            $stock_updater,
+            $image_importer
+        ))->import([$product], 1);
+
+        $this->assertSame([57 => 901], $updated_data['product_features']);
     }
 
     public function testSkipsConflictingMergedFeatureValues()
