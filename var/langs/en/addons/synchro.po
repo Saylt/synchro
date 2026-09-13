@@ -272,6 +272,42 @@ msgctxt "Languages::synchro.exception.unknown_product_application_mode"
 msgid "Unknown product application mode"
 msgstr "Unknown product application mode"
 
+msgctxt "Languages::synchro.product_synchronization_invalid_response"
+msgid "The source returned no product data"
+msgstr "The source returned no product data"
+
+msgctxt "Languages::synchro.synchronize_product_full"
+msgid "Synchronize fully"
+msgstr "Synchronize fully"
+
+msgctxt "Languages::synchro.synchronize_product_actualize"
+msgid "Update price and stock"
+msgstr "Update price and stock"
+
+msgctxt "Languages::synchro.synchronization"
+msgid "Synchronization"
+msgstr "Synchronization"
+
+msgctxt "Languages::synchro.product_synchronization_completed"
+msgid "[count] product(s) synchronized"
+msgstr "[count] product(s) synchronized"
+
+msgctxt "Languages::synchro.product_synchronization_unmapped"
+msgid "[count] product(s) without external mapping skipped"
+msgstr "[count] product(s) without external mapping skipped"
+
+msgctxt "Languages::synchro.product_synchronization_product_unmapped"
+msgid "Product [product_id] has no external mapping"
+msgstr "Product [product_id] has no external mapping"
+
+msgctxt "Languages::synchro.product_synchronization_failed"
+msgid "[count] product(s) could not be synchronized"
+msgstr "[count] product(s) could not be synchronized"
+
+msgctxt "Languages::synchro.product_synchronization_product_failed"
+msgid "Product could not be synchronized"
+msgstr "Product could not be synchronized"
+
 msgctxt "Languages::synchro.exception.full_source_import_required"
 msgid "A full source import is required"
 msgstr "A full source import is required"

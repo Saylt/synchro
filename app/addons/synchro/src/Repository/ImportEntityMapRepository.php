@@ -15,6 +15,8 @@ class ImportEntityMapRepository
     private $database;
 
     /**
+     * Initializes the entity mapping repository.
+     *
      * @param \Tygh\Database\Connection $database Database connection
      */
     public function __construct(Connection $database)
@@ -64,6 +66,31 @@ class ImportEntityMapRepository
             $company_id,
             $entity_type,
             $external_ids
+        );
+    }
+
+    /**
+     * Finds mappings for a batch of local entities.
+     *
+     * @param int        $company_id  Company identifier
+     * @param string     $entity_type Entity type
+     * @param array<int> $local_ids   Local entity identifiers
+     *
+     * @return array<int, array<string, int|string>> Mappings indexed by local identifier
+     */
+    public function findByLocalIds($company_id, $entity_type, array $local_ids)
+    {
+        if (!$local_ids) {
+            return [];
+        }
+
+        return $this->database->getHash(
+            'SELECT * FROM ?:?p WHERE company_id = ?i AND entity_type = ?s AND local_id IN (?n)',
+            'local_id',
+            self::TABLE_NAME,
+            $company_id,
+            $entity_type,
+            $local_ids
         );
     }
 

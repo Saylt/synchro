@@ -193,6 +193,52 @@ class ImportEntityMapRepositoryTest extends ATestCase
         );
     }
 
+    public function testFindsOnlyMappedProductsPendingArchiving()
+    {
+        $database = $this->createDatabase();
+        $mappings = [
+            '292799937' => ['external_id' => '292799937', 'local_id' => 57, 'needs_archiving' => 'Y'],
+        ];
+        $database->expects($this->once())
+            ->method('getHash')
+            ->with(
+                'SELECT * FROM ?:?p WHERE company_id = ?i AND entity_type = ?s'
+                . ' AND needs_archiving = ?s AND local_id > ?i',
+                'external_id',
+                ImportEntityMapRepository::TABLE_NAME,
+                1,
+                'products',
+                'Y',
+                0
+            )
+            ->willReturn($mappings);
+
+        $this->assertSame(
+            $mappings,
+            (new ImportEntityMapRepository($database))->findPendingArchiving(1, 'products')
+        );
+    }
+
+    public function testClearsArchivingMarkForOneMappedProduct()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('query')
+            ->with(
+                'UPDATE ?:?p SET needs_archiving = ?s WHERE company_id = ?i AND entity_type = ?s AND external_id = ?s',
+                ImportEntityMapRepository::TABLE_NAME,
+                'N',
+                1,
+                'products',
+                '292799937'
+            )
+            ->willReturn(1);
+
+        $this->assertTrue(
+            (new ImportEntityMapRepository($database))->clearArchivingMark(1, 'products', '292799937')
+        );
+    }
+
     /**
      * @return \PHPUnit\Framework\MockObject\MockObject|\Tygh\Database\Connection
      */

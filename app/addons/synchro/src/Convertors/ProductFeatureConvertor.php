@@ -21,6 +21,8 @@ class ProductFeatureConvertor implements ConvertorInterface
     private $changed_features = [];
 
     /**
+     * Initializes the product feature convertor.
+     *
      * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository $repository Import entity repository
      * @param int                                                    $company_id Company identifier
      */
@@ -31,9 +33,12 @@ class ProductFeatureConvertor implements ConvertorInterface
     }
 
     /**
-     * @param array<array-key, array|bool|float|int|string|null> $data           External API data
-     * @param int                                                $import_id      Import identifier
-     * @param int                                                $cron_script_id Cron script identifier
+     * Converts feature data and accumulates its variants for staging.
+     *
+     * @param array<array-key, array|bool|float|int|string|null> $data              External API data
+     * @param int                                                $import_id         Import identifier
+     * @param int                                                $cron_script_id    Cron script identifier
+     * @param int                                                $import_process_id Import process identifier
      *
      * @return array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>
      */
@@ -49,36 +54,65 @@ class ProductFeatureConvertor implements ConvertorInterface
 
         foreach ($source_features as $source_feature) {
             $feature_id = (string) $source_feature['id'];
+            $product_feature = $this->createProductFeature($source_feature);
 
             if (!isset($this->changed_features[$feature_id])) {
-                $feature = new ProductFeatureDto();
-                $feature->id = $source_feature['id'];
-                $this->changed_features[$feature_id] = $feature;
+                $this->changed_features[$feature_id] = clone $product_feature;
             }
 
             $feature = $this->changed_features[$feature_id];
-            $feature->name = $source_feature['title'];
-            $feature->group_id = $source_feature['group_id'];
-            $feature->position = $source_feature['ordering_in_group'];
-            $feature->group_name = $source_feature['group_title'];
-
-            $variant = new ProductFeatureVariantDto();
-            $variant->id = sprintf(
-                '%s#%s',
-                $feature_id,
-                md5((string) $source_feature['value'])
-            );
-            $variant->feature_id = $source_feature['id'];
-            $variant->name = (string) $source_feature['value'];
-            $variant->value = $source_feature['value'];
+            $feature->name = $product_feature->name;
+            $feature->group_id = $product_feature->group_id;
+            $feature->position = $product_feature->position;
+            $feature->group_name = $product_feature->group_name;
+            $variant = reset($product_feature->variants);
             $feature->variants[$variant->getEntityId()] = $variant;
-
-            $product_feature = clone $feature;
-            $product_feature->variants = [$variant->getEntityId() => $variant];
             $product_features[] = $product_feature;
         }
 
         return $product_features;
+    }
+
+    /**
+     * Converts product features without changing the staging snapshot.
+     *
+     * @param array<array-key, array<string, int|string>> $data External API feature data
+     *
+     * @return array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>
+     */
+    public function convertProductFeatures(array $data)
+    {
+        $features = [];
+        foreach ($data as $source_feature) {
+            $features[] = $this->createProductFeature($source_feature);
+        }
+
+        return $features;
+    }
+
+    /**
+     * Converts one source product property to a feature with one variant.
+     *
+     * @param array<string, int|string> $source_feature Source product feature
+     *
+     * @return \Tygh\Addons\Synchro\Dto\ProductFeatureDto
+     */
+    private function createProductFeature(array $source_feature)
+    {
+        $feature = new ProductFeatureDto();
+        $feature->id = $source_feature['id'];
+        $feature->name = $source_feature['title'];
+        $feature->group_id = $source_feature['group_id'];
+        $feature->position = $source_feature['ordering_in_group'];
+        $feature->group_name = $source_feature['group_title'];
+        $variant = new ProductFeatureVariantDto();
+        $variant->id = sprintf('%s#%s', $feature->id, md5((string) $source_feature['value']));
+        $variant->feature_id = $feature->id;
+        $variant->name = (string) $source_feature['value'];
+        $variant->value = $source_feature['value'];
+        $feature->variants[$variant->getEntityId()] = $variant;
+
+        return $feature;
     }
 
     /**

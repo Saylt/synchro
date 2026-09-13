@@ -58,6 +58,18 @@ class CronManagerTest extends ATestCase
         ], $this->createManager($database)->getSetElements('inner_status', true));
     }
 
+    public function testGetsScheduleNumberRangesWithoutColumnInspection()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->never())->method('getRow');
+        $manager = $this->createManager($database);
+
+        $this->assertSame(array_map('strval', range(0, 23)), $manager->getSetElements('period_hours_begin'));
+        $this->assertSame(array_map('strval', range(0, 24)), $manager->getSetElements('period_hours_end'));
+        $this->assertSame(array_map('strval', range(0, 23)), $manager->getSetElements('refresh_hours'));
+        $this->assertSame(array_map('strval', range(0, 59)), $manager->getSetElements('refresh_minutes'));
+    }
+
     public function testOrdersPostProcessTaskImmediatelyAfterSourceTask()
     {
         $scripts = [
@@ -85,6 +97,35 @@ class CronManagerTest extends ATestCase
         $this->assertSame(0, $ordered_scripts[15]['dependency_level']);
         $this->assertSame(1, $ordered_scripts[20]['dependency_level']);
         $this->assertSame('synchro_import.categories', $ordered_scripts[20]['dependency_source']);
+    }
+
+    public function testOrdersTestProductApplicationTaskAfterTestSourceTask()
+    {
+        $scripts = [
+            15 => [
+                'script_id'      => 15,
+                'script'         => 'synchro_import.products',
+                'is_test_import' => 'Y',
+                'post_process'   => 'synchro_import.apply_products',
+            ],
+            20 => [
+                'script_id'    => 20,
+                'script'       => 'synchro_import.apply_test_products',
+                'post_process' => '',
+            ],
+            30 => [
+                'script_id'    => 30,
+                'script'       => 'synchro_import.apply_products',
+                'post_process' => '',
+            ],
+        ];
+
+        $ordered_scripts = $this->createManager($this->createDatabase())
+            ->orderCronScriptsByDependencies($scripts);
+
+        $this->assertSame([15, 20, 30], array_keys($ordered_scripts));
+        $this->assertSame(1, $ordered_scripts[20]['dependency_level']);
+        $this->assertSame('synchro_import.products', $ordered_scripts[20]['dependency_source']);
     }
 
     public function testGetsCurrentStatusForRequestedCronTasks()
@@ -457,6 +498,31 @@ class CronManagerTest extends ATestCase
         )->queuePostProcess(15, 10, 'full', 'completed'));
     }
 
+    public function testCompletedLeafTaskDoesNotQueuePostProcess()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->once())
+            ->method('getRow')
+            ->with(
+                'SELECT post_process, entities_per_portion, max_parallel_processes'
+                . ' FROM ?:?p WHERE script_id = ?i',
+                CronManager::TABLE_NAME,
+                15
+            )
+            ->willReturn(['post_process' => '']);
+        $database->expects($this->never())->method('query');
+        $logging = $this->createMock(Logging::class);
+        $logging->expects($this->never())->method('error');
+
+        $this->assertTrue($this->createManager(
+            $database,
+            null,
+            '/usr/bin/php',
+            null,
+            $logging
+        )->queuePostProcess(15, 10, 'test', 'completed'));
+    }
+
     public function testLogsSourceStatusWhenFullPostProcessCannotRunAfterPartialImport()
     {
         $database = $this->createDatabase();
@@ -569,19 +635,21 @@ class CronManagerTest extends ATestCase
             ->with(
                 'INSERT INTO ?:?p ?e',
                 CronManager::TABLE_NAME,
-                [
-                    'script'             => 'synchro_import.categories',
-                    'period_month_days'  => '1,15',
-                    'period_hours_begin' => '8',
-                    'period_hours_end'   => '18',
-                    'refresh_hours'      => '3',
-                    'refresh_minutes'    => '15',
-                    'run_mode'           => 'periodic',
-                    'entities_per_portion'   => 30,
-                    'max_parallel_processes' => 3,
-                    'post_process'       => '',
-                    'created'            => TIME,
-                ]
+                $this->callback(static function (array $script_data) {
+                    return $script_data === [
+                        'script'                  => 'synchro_import.categories',
+                        'run_mode'                => 'periodic',
+                        'period_month_days'       => '1,15',
+                        'period_hours_begin'      => 8,
+                        'period_hours_end'        => 18,
+                        'refresh_hours'           => 3,
+                        'refresh_minutes'         => 15,
+                        'entities_per_portion'    => 30,
+                        'max_parallel_processes'  => 3,
+                        'post_process'            => '',
+                        'created'                 => TIME,
+                    ];
+                })
             )
             ->willReturn(15);
 

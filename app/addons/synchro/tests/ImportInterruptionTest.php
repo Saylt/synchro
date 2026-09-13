@@ -2,6 +2,8 @@
 
 namespace Tygh\Addons\Synchro\Tests\Unit;
 
+defined('SECONDS_IN_DAY') or define('SECONDS_IN_DAY', 86400);
+
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Commands\ImportDataCommandHandler;
 use Tygh\Addons\Synchro\Convertors\ConvertorInterface;
@@ -9,6 +11,7 @@ use Tygh\Addons\Synchro\Convertors\ManufacturerConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductFeatureConvertor;
 use Tygh\Addons\Synchro\CronManager;
+use Tygh\Addons\Synchro\Dto\ProductDtoFactory;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\ImportProcessManager;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
@@ -83,10 +86,12 @@ class ImportInterruptionTest extends ATestCase
         $repository = new CapturingImportEntityRepository();
         $cron_manager = new InterruptAfterFirstEntityCronManager();
         $process_manager = new InterruptAfterFirstImportProcessManager();
+        $product_feature_convertor = new ProductFeatureConvertor($repository, 7);
         $convertor = new ProductConvertor(
             $repository,
             7,
-            new ProductFeatureConvertor($repository, 7),
+            $product_feature_convertor,
+            new ProductDtoFactory($product_feature_convertor),
             $cron_manager,
             $process_manager
         );

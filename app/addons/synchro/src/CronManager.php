@@ -25,6 +25,13 @@ class CronManager
 
     const MIN_SECONDS_BETWEEN_RUNS = 60;
 
+    const SCHEDULE_FIELD_MAX_VALUES = [
+        'period_hours_begin' => self::HOURS_IN_DAY - 1,
+        'period_hours_end'   => self::HOURS_IN_DAY,
+        'refresh_hours'      => self::HOURS_IN_DAY - 1,
+        'refresh_minutes'    => self::MINUTES_IN_HOUR - 1,
+    ];
+
     const LOCK_PREFIX = 'synchro.cron.';
 
     const POST_PROCESS_APPLY_PRODUCTS = 'synchro_import.apply_products';
@@ -238,25 +245,25 @@ class CronManager
         }
         if (isset($params['period_hours_begin']) && $params['period_hours_begin'] !== '') {
             $condition .= $this->database->quote(
-                ' AND FIND_IN_SET(?s, s.period_hours_begin)',
+                ' AND s.period_hours_begin = ?i',
                 $params['period_hours_begin']
             );
         }
         if (isset($params['period_hours_end']) && $params['period_hours_end'] !== '') {
             $condition .= $this->database->quote(
-                ' AND FIND_IN_SET(?s, s.period_hours_end)',
+                ' AND s.period_hours_end = ?i',
                 $params['period_hours_end']
             );
         }
         if (isset($params['refresh_hours']) && $params['refresh_hours'] !== '') {
             $condition .= $this->database->quote(
-                ' AND FIND_IN_SET(?s, s.refresh_hours)',
+                ' AND s.refresh_hours = ?i',
                 $params['refresh_hours']
             );
         }
         if (isset($params['refresh_minutes']) && $params['refresh_minutes'] !== '') {
             $condition .= $this->database->quote(
-                ' AND FIND_IN_SET(?s, s.refresh_minutes)',
+                ' AND s.refresh_minutes = ?i',
                 $params['refresh_minutes']
             );
         }
@@ -329,14 +336,15 @@ class CronManager
             $script_ids_by_dispatch[$script['script']] = $script_id;
         }
         foreach ($scripts as $script_id => $script) {
-            if (
-                empty($script['post_process'])
-                || !isset($script_ids_by_dispatch[$script['post_process']])
-            ) {
+            $target_dispatch = $this->getEffectivePostProcessDispatch(
+                $script['post_process'],
+                isset($script['is_test_import']) && $script['is_test_import'] === 'Y'
+            );
+            if ($target_dispatch === '' || !isset($script_ids_by_dispatch[$target_dispatch])) {
                 continue;
             }
 
-            $child_script_id = $script_ids_by_dispatch[$script['post_process']];
+            $child_script_id = $script_ids_by_dispatch[$target_dispatch];
             $children_by_script_id[$script_id][] = $child_script_id;
             $dependent_script_ids[$child_script_id] = true;
         }
@@ -876,10 +884,10 @@ class CronManager
             return false;
         }
         if ($target_dispatch === '') {
-            if (!isset($source_script['post_process'])) {
+            if (empty($source_script['post_process'])) {
                 return true;
             }
-            $target_dispatch = $source_script['post_process'];
+            $target_dispatch = (string) $source_script['post_process'];
         }
 
         if (!in_array($result_status, ['completed', 'partial_success'], true)) {
@@ -892,12 +900,10 @@ class CronManager
             return false;
         }
 
-        if (
-            $target_dispatch === self::POST_PROCESS_APPLY_PRODUCTS
-            && $source_type === 'test'
-        ) {
-            $target_dispatch = 'synchro_import.apply_test_products';
-        }
+        $target_dispatch = $this->getEffectivePostProcessDispatch(
+            $target_dispatch,
+            $source_type === 'test'
+        );
 
         if (
             $target_dispatch === self::POST_PROCESS_APPLY_PRODUCTS
@@ -945,6 +951,23 @@ class CronManager
         }
 
         return true;
+    }
+
+    /**
+     * Resolves the actual post-process dispatch for the import type.
+     *
+     * @param string $dispatch       Configured post-process dispatch
+     * @param bool   $is_test_import Whether the source import is a test
+     *
+     * @return string
+     */
+    private function getEffectivePostProcessDispatch($dispatch, $is_test_import)
+    {
+        if ($dispatch === self::POST_PROCESS_APPLY_PRODUCTS && $is_test_import) {
+            return 'synchro_import.apply_test_products';
+        }
+
+        return $dispatch;
     }
 
     /**
@@ -1269,6 +1292,12 @@ class CronManager
         $lang_code = DESCR_SL
     ) {
         $cache_key = $field_name;
+        if (empty($this->set_elements[$cache_key]) && isset(self::SCHEDULE_FIELD_MAX_VALUES[$field_name])) {
+            $this->set_elements[$cache_key] = array_map(
+                'strval',
+                range(0, self::SCHEDULE_FIELD_MAX_VALUES[$field_name])
+            );
+        }
         if (empty($this->set_elements[$cache_key])) {
             $column_info = $this->database->getRow(
                 'SHOW COLUMNS FROM ?:?p WHERE Field = ?s',
@@ -1533,7 +1562,7 @@ class CronManager
         if ($period_hours_begin === null) {
             return false;
         }
-        $script_data['period_hours_begin'] = (string) $period_hours_begin;
+        $script_data['period_hours_begin'] = $period_hours_begin;
 
         if ($script_data['run_mode'] === self::RUN_MODE_ONCE) {
             $script_data['period_month_days'] = null;
@@ -1582,9 +1611,9 @@ class CronManager
             return false;
         }
 
-        $script_data['period_hours_end'] = (string) $period_hours_end;
-        $script_data['refresh_hours'] = (string) $refresh_hours;
-        $script_data['refresh_minutes'] = (string) $refresh_minutes;
+        $script_data['period_hours_end'] = $period_hours_end;
+        $script_data['refresh_hours'] = $refresh_hours;
+        $script_data['refresh_minutes'] = $refresh_minutes;
 
         return $script_data;
     }
@@ -1599,10 +1628,10 @@ class CronManager
      */
     private function normalizeSingleRunTime(array $script_data, $period_hours_begin)
     {
-        $script_data['period_hours_begin'] = (string) $period_hours_begin;
-        $script_data['period_hours_end'] = (string) $period_hours_begin;
-        $script_data['refresh_hours'] = '0';
-        $script_data['refresh_minutes'] = '0';
+        $script_data['period_hours_begin'] = $period_hours_begin;
+        $script_data['period_hours_end'] = $period_hours_begin;
+        $script_data['refresh_hours'] = 0;
+        $script_data['refresh_minutes'] = 0;
 
         return $script_data;
     }

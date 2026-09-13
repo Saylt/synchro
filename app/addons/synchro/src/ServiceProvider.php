@@ -18,6 +18,7 @@ use Tygh\Addons\Synchro\Convertors\ProductConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductFeatureConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductFeatureVariantConvertor;
 use Tygh\Addons\Synchro\Convertors\WarehouseConvertor;
+use Tygh\Addons\Synchro\Dto\ProductDtoFactory;
 use Tygh\Addons\Synchro\Importers\CategoryImporter;
 use Tygh\Addons\Synchro\Importers\ImageImporter;
 use Tygh\Addons\Synchro\Importers\ProductImporter;
@@ -154,6 +155,20 @@ class ServiceProvider implements ServiceProviderInterface
             );
         };
 
+        $app['addons.synchro.product_dto_factory'] = static function (Container $app) {
+            return new ProductDtoFactory($app['addons.synchro.convertors.product_feature']);
+        };
+
+        $app['addons.synchro.product_synchronization_manager'] = static function (Container $app) {
+            return new ProductSynchronizationManager(
+                $app['addons.synchro.api.client'],
+                $app['addons.synchro.product_dto_factory'],
+                $app['addons.synchro.importers.product'],
+                $app['addons.synchro.repository.import_entity_map'],
+                $app['addons.synchro.logging']
+            );
+        };
+
         $app['addons.synchro.importers.category'] = static function (Container $app) {
             return new CategoryImporter(
                 $app['db'],
@@ -214,6 +229,7 @@ class ServiceProvider implements ServiceProviderInterface
                 $app['addons.synchro.repository.import_entity'],
                 fn_get_runtime_company_id(),
                 $app['addons.synchro.convertors.product_feature'],
+                $app['addons.synchro.product_dto_factory'],
                 $app['addons.synchro.cron_manager'],
                 $app['addons.synchro.import_process_manager']
             );
@@ -376,6 +392,16 @@ class ServiceProvider implements ServiceProviderInterface
     public static function getProductImporter()
     {
         return Tygh::$app['addons.synchro.importers.product'];
+    }
+
+    /**
+     * Gets the direct product synchronization manager.
+     *
+     * @return \Tygh\Addons\Synchro\ProductSynchronizationManager
+     */
+    public static function getProductSynchronizationManager()
+    {
+        return Tygh::$app['addons.synchro.product_synchronization_manager'];
     }
 
     /**
