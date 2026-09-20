@@ -131,7 +131,7 @@
 					<a class="cm-combination" id="sw_import_processes_{$s.script_id}">
 						<strong>{__("synchro.import_processes")}</strong>
 					</a>
-					<span class="muted">
+					<span class="muted" data-ca-synchro-import-process-summary="{$s.script_id}">
 						#{$import_process_group.parent.import_id} —
 						{__("synchro.`$import_process_group.parent.status`")};
 						{__("synchro.completed_processes", [
@@ -157,7 +157,7 @@
 					<thead>
 					<tr>
 						<th>{__("synchro.process_details")}</th>
-						<th>{__("progress")}</th>
+						<th>{__("synchro.progress")}</th>
 						<th>{__("status")}</th>
 						<th>{__("synchro.execution_time")}</th>
 						<th>{__("synchro.peak_memory_usage")}</th>

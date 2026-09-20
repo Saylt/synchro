@@ -13,12 +13,6 @@ class ImportDataCommand
 
     const ENTITY_MANUFACTURERS = 'manufacturers';
 
-    const ENTITY_FEATURES = 'features';
-
-    const ENTITY_FEATURE_VARIANTS = 'feature_variants';
-
-    const ENTITY_WAREHOUSES = 'warehouses';
-
     /**
      * @var string
      */

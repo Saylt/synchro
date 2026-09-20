@@ -16,8 +16,6 @@ use Tygh\Addons\Synchro\Convertors\CategoryConvertor;
 use Tygh\Addons\Synchro\Convertors\ManufacturerConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductConvertor;
 use Tygh\Addons\Synchro\Convertors\ProductFeatureConvertor;
-use Tygh\Addons\Synchro\Convertors\ProductFeatureVariantConvertor;
-use Tygh\Addons\Synchro\Convertors\WarehouseConvertor;
 use Tygh\Addons\Synchro\Dto\ProductDtoFactory;
 use Tygh\Addons\Synchro\Importers\CategoryImporter;
 use Tygh\Addons\Synchro\Importers\ImageImporter;
@@ -261,22 +259,11 @@ class ServiceProvider implements ServiceProviderInterface
             );
         };
 
-        $app['addons.synchro.convertors.product_feature_variant'] = static function () {
-            return new ProductFeatureVariantConvertor();
-        };
-
-        $app['addons.synchro.convertors.warehouse'] = static function () {
-            return new WarehouseConvertor();
-        };
-
         $app['addons.synchro.commands.import_data_handler'] = static function (Container $app) {
             return new ImportDataCommandHandler([
                 ImportDataCommand::ENTITY_PRODUCTS         => $app['addons.synchro.convertors.product'],
                 ImportDataCommand::ENTITY_CATEGORIES       => $app['addons.synchro.convertors.category'],
                 ImportDataCommand::ENTITY_MANUFACTURERS    => $app['addons.synchro.convertors.manufacturer'],
-                ImportDataCommand::ENTITY_FEATURES         => $app['addons.synchro.convertors.product_feature'],
-                ImportDataCommand::ENTITY_FEATURE_VARIANTS => $app['addons.synchro.convertors.product_feature_variant'],
-                ImportDataCommand::ENTITY_WAREHOUSES       => $app['addons.synchro.convertors.warehouse'],
             ]);
         };
 

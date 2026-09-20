@@ -26,7 +26,6 @@ namespace Tygh\Addons\Synchro\Tests\Unit {
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Dto\CategoryDto;
 use Tygh\Addons\Synchro\Dto\ManufacturerDto;
-use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
 use Tygh\Addons\Synchro\Dto\WarehouseDto;
 use Tygh\Addons\Synchro\Importers\ImageImporter;
@@ -655,7 +654,7 @@ class ProductImporterTest extends ATestCase
     }
 
     /**
-     * Adds an imported feature with one selected variant to a product.
+     * Adds one compact feature variant assignment to a product.
      *
      * @param \Tygh\Addons\Synchro\Dto\ProductDto $product    Imported product
      * @param int                                   $feature_id External feature identifier
@@ -665,17 +664,10 @@ class ProductImporterTest extends ATestCase
      */
     private function addFeature(ProductDto $product, $feature_id, $value)
     {
-        $feature = new ProductFeatureDto();
-        $feature->id = $feature_id;
-        $variant = new ProductFeatureVariantDto();
-        $variant->id = $feature_id . '#' . md5($value);
-        $variant->feature_id = $feature_id;
-        $variant->name = $value;
-        $variant->value = $value;
-        $feature->variants[$variant->getEntityId()] = $variant;
-        $product->features[] = $feature;
+        $variant_id = $feature_id . '#' . md5($value);
+        $product->feature_variant_ids[(string) $feature_id][] = $variant_id;
 
-        return $variant->getEntityId();
+        return $variant_id;
     }
 
     /**

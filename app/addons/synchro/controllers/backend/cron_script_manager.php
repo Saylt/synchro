@@ -37,7 +37,32 @@ if ($mode === 'refresh_statuses') {
     }
     unset($status);
 
+    $import_process_summaries = array_fill_keys($script_ids, '');
+    foreach ($import_process_manager->getLatestProcesses($script_ids) as $script_id => $process_group) {
+        $parent = $process_group['parent'];
+        $summary = '#' . $parent['import_id'] . ' — '
+            . __('synchro.' . $parent['status']) . '; '
+            . __('synchro.completed_processes', [
+                '[completed]' => $process_group['completed_count'],
+                '[total]'     => $process_group['total_count'],
+            ]) . '; ';
+        if (!empty($parent['staging_import_id'])) {
+            $summary .= __('synchro.application_plan_summary', [
+                '[items]'     => $parent['total_items'],
+                '[processes]' => $parent['max_parallel_processes'],
+            ]);
+        } else {
+            $summary .= __('synchro.import_plan_summary', [
+                '[items]'  => $parent['total_items'],
+                '[pages]'  => $parent['total_pages'],
+                '[limit]'  => $parent['page_limit'],
+            ]);
+        }
+        $import_process_summaries[$script_id] = $summary;
+    }
+
     Tygh::$app['ajax']->assign('synchro_cron_statuses', $statuses);
+    Tygh::$app['ajax']->assign('synchro_import_process_summaries', $import_process_summaries);
 
     return [CONTROLLER_STATUS_NO_CONTENT];
 }

@@ -404,37 +404,4 @@ if ($mode === 'manufacturers') {
     return [CONTROLLER_STATUS_NO_CONTENT];
 }
 
-if ($mode === 'features') {
-    if ($cron_script_id) {
-        $cron_manager->updateProgressStatus($cron_script_id, __('synchro.importing_features'));
-    }
-    ServiceProvider::getCommandBus()->dispatch(
-        ImportDataCommand::create(ImportDataCommand::ENTITY_FEATURES, [], 0, $cron_script_id)
-    );
-
-    return [CONTROLLER_STATUS_NO_CONTENT];
-}
-
-if ($mode === 'feature_variants') {
-    if ($cron_script_id) {
-        $cron_manager->updateProgressStatus($cron_script_id, __('synchro.importing_feature_variants'));
-    }
-    ServiceProvider::getCommandBus()->dispatch(
-        ImportDataCommand::create(ImportDataCommand::ENTITY_FEATURE_VARIANTS, [], 0, $cron_script_id)
-    );
-
-    return [CONTROLLER_STATUS_NO_CONTENT];
-}
-
-if ($mode === 'warehouses') {
-    if ($cron_script_id) {
-        $cron_manager->updateProgressStatus($cron_script_id, __('synchro.importing_warehouses'));
-    }
-    ServiceProvider::getCommandBus()->dispatch(
-        ImportDataCommand::create(ImportDataCommand::ENTITY_WAREHOUSES, [], 0, $cron_script_id)
-    );
-
-    return [CONTROLLER_STATUS_NO_CONTENT];
-}
-
 return [CONTROLLER_STATUS_NO_PAGE];

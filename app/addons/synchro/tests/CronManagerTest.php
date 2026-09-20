@@ -70,6 +70,41 @@ class CronManagerTest extends ATestCase
         $this->assertSame(array_map('strval', range(0, 59)), $manager->getSetElements('refresh_minutes'));
     }
 
+    public function testCreatesSeparateMetricRowsForRepeatedProcessAttempts()
+    {
+        $database = $this->createDatabase();
+        $database->expects($this->exactly(2))
+            ->method('getField')
+            ->willReturn(15);
+        $database->expects($this->exactly(2))
+            ->method('query')
+            ->withConsecutive(
+                [
+                    'INSERT INTO ?:?p ?e',
+                    CronManager::METRICS_TABLE_NAME,
+                    $this->callback(static function (array $metric) {
+                        return $metric['script_id'] === 7
+                            && $metric['import_id'] === 44
+                            && $metric['parent_metric_id'] === 15;
+                    }),
+                ],
+                [
+                    'INSERT INTO ?:?p ?e',
+                    CronManager::METRICS_TABLE_NAME,
+                    $this->callback(static function (array $metric) {
+                        return $metric['script_id'] === 7
+                            && $metric['import_id'] === 44
+                            && $metric['parent_metric_id'] === 15;
+                    }),
+                ]
+            )
+            ->willReturnOnConsecutiveCalls(21, 22);
+        $manager = $this->createManager($database);
+
+        $this->assertSame(21, $manager->startProcessMetric(7, 44));
+        $this->assertSame(22, $manager->startProcessMetric(7, 44));
+    }
+
     public function testOrdersPostProcessTaskImmediatelyAfterSourceTask()
     {
         $scripts = [
@@ -134,9 +169,17 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('getHash')
             ->with(
-                'SELECT script_id, last_launch, inner_status, progress_status FROM ?:?p'
-                . ' WHERE script_id IN (?n) AND script IN (?a)',
+                'SELECT script_id, last_launch, inner_status, progress_status,'
+                . ' (SELECT execution_time FROM ?:?p WHERE script_id = s.script_id AND import_id = ?i'
+                . ' ORDER BY metric_id DESC LIMIT 1) AS execution_time,'
+                . ' (SELECT peak_memory_usage FROM ?:?p WHERE script_id = s.script_id AND import_id = ?i'
+                . ' ORDER BY metric_id DESC LIMIT 1) AS peak_memory_usage'
+                . ' FROM ?:?p AS s WHERE script_id IN (?n) AND script IN (?a)',
                 'script_id',
+                CronManager::METRICS_TABLE_NAME,
+                0,
+                CronManager::METRICS_TABLE_NAME,
+                0,
                 CronManager::TABLE_NAME,
                 [15, 20],
                 ['synchro_import.products']
@@ -147,6 +190,8 @@ class CronManagerTest extends ATestCase
                     'last_launch'     => '1757588400',
                     'inner_status'    => 'in_progress',
                     'progress_status' => 'Importing 30 of 100 products',
+                    'execution_time'  => '1500',
+                    'peak_memory_usage' => '1048576',
                 ],
             ]);
 
@@ -156,6 +201,8 @@ class CronManagerTest extends ATestCase
                 'last_launch'     => 1757588400,
                 'inner_status'    => 'in_progress',
                 'progress_status' => 'Importing 30 of 100 products',
+                'execution_time'  => 1500,
+                'peak_memory_usage' => 1048576,
             ],
         ], $this->createManager($database)->getCronScriptStatuses([15, 20]));
     }
@@ -1141,7 +1188,7 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('getRow')
             ->willReturn([]);
-        $database->expects($this->exactly(2))
+        $database->expects($this->exactly(3))
             ->method('query')
             ->withConsecutive(
                 [
@@ -1153,6 +1200,11 @@ class CronManagerTest extends ATestCase
                     ],
                     15,
                     'queued',
+                ],
+                [
+                    'INSERT INTO ?:?p ?e',
+                    CronManager::METRICS_TABLE_NAME,
+                    $this->isType('array'),
                 ],
                 [
                     'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s), progress_status = ?s'
@@ -1199,7 +1251,7 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('getRow')
             ->willReturn([]);
-        $database->expects($this->exactly(2))
+        $database->expects($this->exactly(3))
             ->method('query')
             ->willReturn(1);
         $lock = $this->getMockBuilder(Lock::class)
@@ -1241,7 +1293,7 @@ class CronManagerTest extends ATestCase
         $database->expects($this->once())
             ->method('getRow')
             ->willReturn([]);
-        $database->expects($this->exactly(2))
+        $database->expects($this->exactly(3))
             ->method('query')
             ->withConsecutive(
                 [
@@ -1253,6 +1305,11 @@ class CronManagerTest extends ATestCase
                     ],
                     15,
                     'queued',
+                ],
+                [
+                    'INSERT INTO ?:?p ?e',
+                    CronManager::METRICS_TABLE_NAME,
+                    $this->isType('array'),
                 ],
                 [
                     'UPDATE ?:?p SET inner_status = IF(inner_status = ?s, ?s, ?s), progress_status = ?s'

@@ -12,15 +12,6 @@ return [
     'synchro_import.manufacturers' => [
         'name' => 'synchro.import_manufacturers',
     ],
-    'synchro_import.features' => [
-        'name' => 'synchro.import_features',
-    ],
-    'synchro_import.feature_variants' => [
-        'name' => 'synchro.import_feature_variants',
-    ],
-    'synchro_import.warehouses' => [
-        'name' => 'synchro.import_warehouses',
-    ],
     'synchro_import.apply_products' => [
         'name'   => 'synchro.apply_products',
         'hidden' => true,

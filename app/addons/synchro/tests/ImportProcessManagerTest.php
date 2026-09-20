@@ -23,6 +23,7 @@ use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\ImportProcessManager;
 use Tygh\Addons\Synchro\ProductImportRangeBuilder;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 use Tygh\Lock\Factory;
 use Tygh\Lock\Lock;
 use Tygh\Tests\Unit\ATestCase;
@@ -67,6 +68,48 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertSame(ImportEntityRepository::SOURCE_TYPE_TEST, $repository->imports[$parent_id]['source_type']);
         $children = $repository->findChildren($parent_id);
         $this->assertSame(ImportEntityRepository::SOURCE_TYPE_TEST, $children[0]['source_type']);
+    }
+
+    public function testCollectsFeaturesForFullAndTestProductImports()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $manager = $this->createManager($repository);
+
+        $full_import_id = $manager->createProductImport([
+            'script_id' => 15,
+        ], 4, 10);
+        $test_import_id = $manager->createProductImport([
+            'script_id'      => 16,
+            'is_test_import' => 'Y',
+        ], 4, 10);
+
+        $this->assertSame('Y', $repository->imports[$full_import_id]['collect_product_features']);
+        $this->assertSame(
+            'Y',
+            $repository->findChildren($full_import_id)[0]['collect_product_features']
+        );
+        $this->assertSame('Y', $repository->imports[$test_import_id]['collect_product_features']);
+        $this->assertSame(
+            'Y',
+            $repository->findChildren($test_import_id)[0]['collect_product_features']
+        );
+    }
+
+    public function testSkipsFeaturesOnlyForProductActualization()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $manager = $this->createManager($repository);
+
+        $import_id = $manager->createProductImport([
+            'script_id'    => 15,
+            'post_process' => CronManager::POST_PROCESS_ACTUALIZE_PRODUCTS,
+        ], 4, 10);
+
+        $this->assertSame('N', $repository->imports[$import_id]['collect_product_features']);
+        $this->assertSame(
+            'N',
+            $repository->findChildren($import_id)[0]['collect_product_features']
+        );
     }
 
     public function testCreatesProductApplicationHierarchy()
@@ -462,6 +505,141 @@ class ImportProcessManagerTest extends ATestCase
         $this->assertCount(1, $commands);
     }
 
+    public function testCompletingFeatureCollectionChildPublishesItsSnapshotBeforeContinuingParent()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            10 => [
+                'import_id'              => 10,
+                'parent_import_id'       => 0,
+                'cron_script_id'         => 15,
+                'status'                 => ImportEntityRepository::STATUS_PROCESSING,
+                'max_parallel_processes' => 1,
+            ],
+            11 => [
+                'import_id'                => 11,
+                'parent_import_id'         => 10,
+                'entity_type'              => ImportDataCommand::ENTITY_PRODUCTS,
+                'collect_product_features' => ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES,
+                'status'                   => ImportEntityRepository::STATUS_PROCESSING,
+                'page_from'                => 1,
+            ],
+        ];
+        $snapshot_repository = new InMemoryProductFeatureSnapshotRepository($repository);
+        $manager = $this->createManager($repository, null, null, $snapshot_repository);
+
+        $manager->completeProcess(11);
+
+        $this->assertSame([[11, 10]], $snapshot_repository->merged_portions);
+        $this->assertSame(0, $repository->complete_child_calls);
+        $this->assertSame(ImportEntityRepository::STATUS_COMPLETED, $repository->imports[11]['status']);
+    }
+
+    public function testCompletingActualizationChildDoesNotPublishAFeatureSnapshot()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            10 => [
+                'import_id'              => 10,
+                'parent_import_id'       => 0,
+                'cron_script_id'         => 15,
+                'status'                 => ImportEntityRepository::STATUS_PROCESSING,
+                'max_parallel_processes' => 1,
+            ],
+            11 => [
+                'import_id'                => 11,
+                'parent_import_id'         => 10,
+                'entity_type'              => ImportDataCommand::ENTITY_PRODUCTS,
+                'collect_product_features' => ImportEntityRepository::COLLECT_PRODUCT_FEATURES_NO,
+                'status'                   => ImportEntityRepository::STATUS_PROCESSING,
+                'page_from'                => 1,
+            ],
+        ];
+        $snapshot_repository = new InMemoryProductFeatureSnapshotRepository($repository);
+        $manager = $this->createManager($repository, null, null, $snapshot_repository);
+
+        $manager->completeProcess(11);
+
+        $this->assertSame([], $snapshot_repository->merged_portions);
+        $this->assertSame(1, $repository->complete_child_calls);
+    }
+
+    public function testFailingFeatureCollectionProcessRemovesChildAndUnpublishedRootSnapshots()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            10 => [
+                'import_id'                => 10,
+                'parent_import_id'         => 0,
+                'cron_script_id'           => 15,
+                'entity_type'              => ImportDataCommand::ENTITY_PRODUCTS,
+                'collect_product_features' => ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES,
+                'status'                   => ImportEntityRepository::STATUS_PROCESSING,
+                'max_parallel_processes'   => 1,
+            ],
+            11 => [
+                'import_id'                => 11,
+                'parent_import_id'         => 10,
+                'entity_type'              => ImportDataCommand::ENTITY_PRODUCTS,
+                'collect_product_features' => ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES,
+                'status'                   => ImportEntityRepository::STATUS_PROCESSING,
+                'page_from'                => 1,
+            ],
+        ];
+        $snapshot_repository = new InMemoryProductFeatureSnapshotRepository($repository);
+
+        $this->createManager($repository, null, null, $snapshot_repository)->failProcess(11, 'API failed');
+
+        $this->assertSame([[11], [10, 11]], $snapshot_repository->deleted_import_ids);
+    }
+
+    public function testCompletedApplicationRemovesSnapshotSupersededWhileItWasActive()
+    {
+        $repository = new InMemoryImportEntityRepository();
+        $repository->imports = [
+            10 => [
+                'import_id'         => 10,
+                'parent_import_id'  => 0,
+                'staging_import_id' => 50,
+                'cron_script_id'    => 15,
+                'company_id'        => 4,
+                'entity_type'       => ImportDataCommand::ENTITY_PRODUCTS,
+                'source_type'       => ImportEntityRepository::SOURCE_TYPE_FULL,
+                'status'            => ImportEntityRepository::STATUS_PROCESSING,
+                'max_parallel_processes' => 1,
+            ],
+            11 => [
+                'import_id'        => 11,
+                'parent_import_id' => 10,
+                'status'           => ImportEntityRepository::STATUS_COMPLETED,
+                'page_from'        => 0,
+            ],
+            50 => [
+                'import_id'                => 50,
+                'parent_import_id'         => 0,
+                'company_id'               => 4,
+                'entity_type'              => ImportDataCommand::ENTITY_PRODUCTS,
+                'source_type'              => ImportEntityRepository::SOURCE_TYPE_FULL,
+                'collect_product_features' => ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES,
+                'status'                   => ImportEntityRepository::STATUS_COMPLETED,
+            ],
+        ];
+        $snapshot_repository = new InMemoryProductFeatureSnapshotRepository($repository);
+        $snapshot_repository->latest_snapshot_id = 70;
+        $snapshot_repository->superseded_snapshot_ids = [50];
+        $cron_manager = $this->getMockBuilder(CronManager::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['finalizeDeferredTask', 'queuePostProcess'])
+            ->getMock();
+        $cron_manager->method('finalizeDeferredTask')->willReturn(false);
+
+        $this->createManager($repository, null, $cron_manager, $snapshot_repository)->reconcileParent(10);
+
+        $this->assertSame([[4, ImportEntityRepository::SOURCE_TYPE_FULL]], $snapshot_repository->latest_snapshot_calls);
+        $this->assertSame([[4, ImportEntityRepository::SOURCE_TYPE_FULL, 70]], $snapshot_repository->superseded_snapshot_calls);
+        $this->assertSame([[50]], $snapshot_repository->deleted_import_ids);
+    }
+
     public function testCompletingApplicationChildUpdatesAggregateProgress()
     {
         $repository = new InMemoryImportEntityRepository();
@@ -752,7 +930,8 @@ class ImportProcessManagerTest extends ATestCase
     private function createManager(
         InMemoryImportEntityRepository $repository,
         callable $process_launcher = null,
-        CronManager $cron_manager = null
+        CronManager $cron_manager = null,
+        ProductFeatureSnapshotRepository $snapshot_repository = null
     )
     {
         $lock = $this->getMockBuilder(Lock::class)
@@ -770,9 +949,13 @@ class ImportProcessManagerTest extends ATestCase
                 ->disableOriginalConstructor()
                 ->getMock();
         }
+        if ($snapshot_repository === null) {
+            $snapshot_repository = new InMemoryProductFeatureSnapshotRepository($repository);
+        }
 
         return new ImportProcessManager(
             $repository,
+            $snapshot_repository,
             new ProductImportRangeBuilder(),
             new EntityApplicationPlanBuilder(),
             $cron_manager,
@@ -802,6 +985,9 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
 
     /** @var array<int, int> */
     public $category_level_counts = [];
+
+    /** @var int */
+    public $complete_child_calls = 0;
 
     /** @var int */
     private $next_id = 1;
@@ -842,7 +1028,10 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
             $cron_script_id,
             $ranges,
             $plan['page_limit'],
-            $plan['source_type']
+            $plan['source_type'],
+            isset($plan['collect_product_features'])
+                ? $plan['collect_product_features']
+                : self::COLLECT_PRODUCT_FEATURES_NO
         );
 
         return $parent_import_id;
@@ -855,7 +1044,8 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
         $cron_script_id,
         array $ranges,
         $page_limit,
-        $source_type = self::SOURCE_TYPE_FULL
+        $source_type = self::SOURCE_TYPE_FULL,
+        $collect_product_features = self::COLLECT_PRODUCT_FEATURES_NO
     ) {
         $import_ids = [];
 
@@ -868,6 +1058,7 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
                 'company_id'       => $company_id,
                 'entity_type'      => $entity_type,
                 'source_type'      => $source_type,
+                'collect_product_features' => $collect_product_features,
                 'status'           => self::STATUS_QUEUED,
                 'page_limit'       => $page_limit,
                 'processed_items'  => 0,
@@ -1060,6 +1251,7 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
 
     public function completeChild($import_id)
     {
+        $this->complete_child_calls++;
         $this->imports[$import_id]['status'] = self::STATUS_COMPLETED;
 
         return true;
@@ -1070,5 +1262,85 @@ class InMemoryImportEntityRepository extends ImportEntityRepository
         $this->imports[$import_id]['status'] = self::STATUS_CANCELLED;
 
         return true;
+    }
+}
+
+class InMemoryProductFeatureSnapshotRepository extends ProductFeatureSnapshotRepository
+{
+    /** @var \Tygh\Addons\Synchro\Tests\Unit\InMemoryImportEntityRepository */
+    private $import_repository;
+
+    /** @var array<array{int, int}> */
+    public $merged_portions = [];
+
+    /** @var array<array<int>> */
+    public $deleted_import_ids = [];
+
+    /** @var int */
+    public $latest_snapshot_id = 0;
+
+    /** @var array<int> */
+    public $superseded_snapshot_ids = [];
+
+    /** @var array<array{int, string}> */
+    public $latest_snapshot_calls = [];
+
+    /** @var array<array{int, string, int}> */
+    public $superseded_snapshot_calls = [];
+
+    /**
+     * @param \Tygh\Addons\Synchro\Tests\Unit\InMemoryImportEntityRepository $import_repository Import repository
+     */
+    public function __construct(InMemoryImportEntityRepository $import_repository)
+    {
+        $this->import_repository = $import_repository;
+    }
+
+    /**
+     * @param int $child_import_id  Child import identifier
+     * @param int $parent_import_id Parent import identifier
+     *
+     * @return bool
+     */
+    public function mergeAndCompletePortion($child_import_id, $parent_import_id)
+    {
+        $this->merged_portions[] = [(int) $child_import_id, (int) $parent_import_id];
+        $this->import_repository->imports[$child_import_id]['status'] = ImportEntityRepository::STATUS_COMPLETED;
+
+        return true;
+    }
+
+    /**
+     * @param array<array-key, int> $import_ids Import identifiers
+     *
+     * @return void
+     */
+    public function deleteByImportIds(array $import_ids)
+    {
+        $this->deleted_import_ids[] = array_values($import_ids);
+    }
+
+    /**
+     * @return array<int>
+     */
+    public function findLatestSnapshotId($company_id, $source_type)
+    {
+        $this->latest_snapshot_calls[] = [(int) $company_id, (string) $source_type];
+
+        return $this->latest_snapshot_id;
+    }
+
+    /**
+     * @return array<int>
+     */
+    public function findSupersededSnapshotIds($company_id, $source_type, $current_import_id)
+    {
+        $this->superseded_snapshot_calls[] = [
+            (int) $company_id,
+            (string) $source_type,
+            (int) $current_import_id,
+        ];
+
+        return $this->superseded_snapshot_ids;
     }
 }

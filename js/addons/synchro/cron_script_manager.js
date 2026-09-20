@@ -24,6 +24,9 @@
                     $('[data-ca-synchro-progress-status="' + script_id + '"]').text(status.progress_status);
                     $('[data-ca-synchro-task-metric="' + script_id + '"]').text(status.metric);
                 });
+                $.each(data.synchro_import_process_summaries, function (script_id, summary) {
+                    $('[data-ca-synchro-import-process-summary="' + script_id + '"]').text(summary);
+                });
             }
         });
     }

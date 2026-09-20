@@ -1,6 +1,15 @@
 <?php
 
-namespace Tygh\Addons\Synchro\Tests\Unit;
+namespace Tygh\Addons\Synchro\Convertors {
+    if (!function_exists(__NAMESPACE__ . '\\__')) {
+        function __($language_variable, array $params = [])
+        {
+            return $language_variable;
+        }
+    }
+}
+
+namespace Tygh\Addons\Synchro\Tests\Unit {
 
 defined('SECONDS_IN_DAY') or define('SECONDS_IN_DAY', 86400);
 
@@ -14,7 +23,9 @@ use Tygh\Addons\Synchro\CronManager;
 use Tygh\Addons\Synchro\Dto\ProductDtoFactory;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\ImportProcessManager;
+use Tygh\Addons\Synchro\Logging;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 use Tygh\Tests\Unit\ATestCase;
 
 class ImportInterruptionTest extends ATestCase
@@ -86,14 +97,15 @@ class ImportInterruptionTest extends ATestCase
         $repository = new CapturingImportEntityRepository();
         $cron_manager = new InterruptAfterFirstEntityCronManager();
         $process_manager = new InterruptAfterFirstImportProcessManager();
-        $product_feature_convertor = new ProductFeatureConvertor($repository, 7);
+        $product_feature_convertor = new ProductFeatureConvertor($this->productFeatureSnapshotRepository());
         $convertor = new ProductConvertor(
             $repository,
             7,
             $product_feature_convertor,
             new ProductDtoFactory($product_feature_convertor),
             $cron_manager,
-            $process_manager
+            $process_manager,
+            $this->getMockBuilder(Logging::class)->disableOriginalConstructor()->getMock()
         );
 
         try {
@@ -109,6 +121,52 @@ class ImportInterruptionTest extends ATestCase
             $this->assertSame(0, $cron_manager->checks);
             $this->assertSame(0, $repository->batch_save_calls);
         }
+    }
+
+    public function testSkipsSourceErrorProductAndLogsWarning()
+    {
+        $repository = new CapturingImportEntityRepository();
+        $product_feature_convertor = new ProductFeatureConvertor($this->productFeatureSnapshotRepository());
+        $logging = $this->getMockBuilder(Logging::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['warning'])
+            ->getMock();
+        $logging->expects($this->once())
+            ->method('warning')
+            ->with('synchro_import.products', $this->anything());
+        $convertor = new ProductConvertor(
+            $repository,
+            7,
+            $product_feature_convertor,
+            new ProductDtoFactory($product_feature_convertor),
+            new NonInterruptingCronManager(),
+            new InterruptAfterFirstImportProcessManager(),
+            $logging
+        );
+
+        $products = $convertor->convert([
+            'data' => [
+                $this->getProductData(1, 'First'),
+                ['id' => 2, 'error' => 'Товар не найден'],
+            ],
+        ], 25, 15);
+
+        $this->assertCount(1, $products);
+        $this->assertSame(1, $products[0]->id);
+        $this->assertCount(1, $repository->last_batch);
+    }
+
+    /**
+     * Creates a no-op snapshot repository for conversion tests that do not reach persistence.
+     *
+     * @return \PHPUnit\Framework\MockObject\MockObject|\Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository
+     */
+    private function productFeatureSnapshotRepository()
+    {
+        return $this->getMockBuilder(ProductFeatureSnapshotRepository::class)
+            ->disableOriginalConstructor()
+            ->setMethods(['savePortion'])
+            ->getMock();
     }
 
     /**
@@ -180,6 +238,9 @@ class CapturingImportEntityRepository extends ImportEntityRepository
     /** @var int */
     public $batch_save_calls = 0;
 
+    /** @var array */
+    public $last_batch = [];
+
     public function __construct()
     {
     }
@@ -187,8 +248,20 @@ class CapturingImportEntityRepository extends ImportEntityRepository
     public function batchSave($import_id, $company_id, array $entities)
     {
         $this->batch_save_calls++;
+        $this->last_batch = $entities;
 
         return count($entities);
+    }
+}
+
+class NonInterruptingCronManager extends CronManager
+{
+    public function __construct()
+    {
+    }
+
+    public function ensureTaskCanContinue($script_id)
+    {
     }
 }
 
@@ -226,4 +299,10 @@ class InterruptAfterFirstImportProcessManager extends ImportProcessManager
             throw new TaskInterruptedException('Import process interruption requested');
         }
     }
+
+    public function getProcess($import_id)
+    {
+        return ['collect_product_features' => ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES];
+    }
+}
 }

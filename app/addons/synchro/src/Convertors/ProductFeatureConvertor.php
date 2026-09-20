@@ -9,7 +9,7 @@ use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 /**
  * Converts product feature data received from the external API.
  */
-class ProductFeatureConvertor implements ConvertorInterface
+class ProductFeatureConvertor
 {
     /** @var \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository */
     private $repository;
@@ -25,23 +25,6 @@ class ProductFeatureConvertor implements ConvertorInterface
     public function __construct(ProductFeatureSnapshotRepository $repository)
     {
         $this->repository = $repository;
-    }
-
-    /**
-     * Converts feature data and accumulates its variants for staging.
-     *
-     * @param array<array-key, array|bool|float|int|string|null> $data              External API data
-     * @param int                                                $import_id         Import identifier
-     * @param int                                                $cron_script_id    Cron script identifier
-     * @param int                                                $import_process_id Import process identifier
-     *
-     * @return array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>
-     */
-    public function convert(array $data, $import_id = 0, $cron_script_id = 0, $import_process_id = 0)
-    {
-        list($features) = $this->convertProperties($data, true);
-
-        return $features;
     }
 
     /**

@@ -384,18 +384,6 @@ msgctxt "Languages::synchro.import_manufacturers"
 msgid "Import manufacturers"
 msgstr "Import manufacturers"
 
-msgctxt "Languages::synchro.import_features"
-msgid "Import product features"
-msgstr "Import product features"
-
-msgctxt "Languages::synchro.import_feature_variants"
-msgid "Import product feature variants"
-msgstr "Import product feature variants"
-
-msgctxt "Languages::synchro.import_warehouses"
-msgid "Import warehouses"
-msgstr "Import warehouses"
-
 msgctxt "Languages::synchro.importing_products"
 msgid "Importing products: page [page] of [pages]"
 msgstr "Importing products: page [page] of [pages]"
@@ -407,18 +395,6 @@ msgstr "Importing categories"
 msgctxt "Languages::synchro.importing_manufacturers"
 msgid "Importing manufacturers"
 msgstr "Importing manufacturers"
-
-msgctxt "Languages::synchro.importing_features"
-msgid "Importing product features"
-msgstr "Importing product features"
-
-msgctxt "Languages::synchro.importing_feature_variants"
-msgid "Importing product feature variants"
-msgstr "Importing product feature variants"
-
-msgctxt "Languages::synchro.importing_warehouses"
-msgid "Importing warehouses"
-msgstr "Importing warehouses"
 
 msgctxt "Languages::synchro.each"
 msgid "Each"
@@ -779,6 +755,10 @@ msgstr "[items] items, up to [processes] parallel processes"
 msgctxt "Languages::synchro.process_details"
 msgid "Process"
 msgstr "Process"
+
+msgctxt "Languages::synchro.progress"
+msgid "Progress"
+msgstr "Progress"
 
 msgctxt "Languages::synchro.execution_time"
 msgid "Execution time"
