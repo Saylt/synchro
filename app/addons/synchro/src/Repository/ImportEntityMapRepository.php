@@ -244,27 +244,6 @@ class ImportEntityMapRepository
     }
 
     /**
-     * Stores the timestamp of the last successful price and stock actualization.
-     *
-     * @param int      $company_id  Company identifier
-     * @param string   $entity_type Entity type
-     * @param string   $external_id External entity identifier
-     * @param int|null $timestamp   Actualization timestamp
-     *
-     * @return bool
-     */
-    public function markActualized($company_id, $entity_type, $external_id, $timestamp = null)
-    {
-        return $this->updateTimestamp(
-            $company_id,
-            $entity_type,
-            $external_id,
-            'actualized_timestamp',
-            $timestamp
-        );
-    }
-
-    /**
      * Marks a batch of entities as fully updated and not awaiting archiving.
      *
      * @param int           $company_id   Company identifier
@@ -336,26 +315,6 @@ class ImportEntityMapRepository
             $company_id,
             $entity_type
         ) !== false;
-    }
-
-    /**
-     * Removes an entity mapping by its external identifier.
-     *
-     * @param int    $company_id  Company identifier
-     * @param string $entity_type Entity type
-     * @param string $external_id External entity identifier
-     *
-     * @return bool
-     */
-    public function remove($company_id, $entity_type, $external_id)
-    {
-        return (bool) $this->database->query(
-            'DELETE FROM ?:?p WHERE company_id = ?i AND entity_type = ?s AND external_id = ?s',
-            self::TABLE_NAME,
-            $company_id,
-            $entity_type,
-            $external_id
-        );
     }
 
     /**

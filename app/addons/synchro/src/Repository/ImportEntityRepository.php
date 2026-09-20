@@ -346,43 +346,6 @@ class ImportEntityRepository
     }
 
     /**
-     * Counts currently running child imports.
-     *
-     * @param int $parent_import_id Parent import identifier
-     *
-     * @return int
-     */
-    public function countRunningChildren($parent_import_id)
-    {
-        return (int) $this->database->getField(
-            'SELECT COUNT(*) FROM ?:?p WHERE parent_import_id = ?i AND status IN (?a)',
-            self::IMPORTS_TABLE_NAME,
-            $parent_import_id,
-            [self::STATUS_PROCESSING, self::STATUS_STOPPING]
-        );
-    }
-
-    /**
-     * Finds queued child imports.
-     *
-     * @param int $parent_import_id Parent import identifier
-     * @param int $limit            Maximum number of children
-     *
-     * @return array<array-key, array<string, int|string>>
-     */
-    public function findQueuedChildren($parent_import_id, $limit)
-    {
-        return $this->database->getArray(
-            'SELECT * FROM ?:?p WHERE parent_import_id = ?i AND status = ?s'
-            . ' ORDER BY page_from, import_id LIMIT ?i',
-            self::IMPORTS_TABLE_NAME,
-            $parent_import_id,
-            self::STATUS_QUEUED,
-            $limit
-        );
-    }
-
-    /**
      * Finds child processes that stopped reporting progress.
      *
      * @param int $updated_before Maximum activity timestamp
@@ -990,31 +953,6 @@ class ImportEntityRepository
     }
 
     /**
-     * Finds the latest parent import with at least one completed child.
-     *
-     * @param int    $company_id  Company identifier
-     * @param string $entity_type Root entity type
-     *
-     * @return int
-     */
-    public function findLatestMappableParentId($company_id, $entity_type)
-    {
-        return (int) $this->database->getField(
-            'SELECT parent.import_id FROM ?:?p AS parent'
-            . ' WHERE parent.company_id = ?i AND parent.entity_type = ?s AND parent.parent_import_id = ?i'
-            . ' AND EXISTS (SELECT child.import_id FROM ?:?p AS child'
-            . ' WHERE child.parent_import_id = parent.import_id AND child.status = ?s)'
-            . ' ORDER BY parent.import_id DESC LIMIT 1',
-            self::IMPORTS_TABLE_NAME,
-            $company_id,
-            $entity_type,
-            0,
-            self::IMPORTS_TABLE_NAME,
-            self::STATUS_COMPLETED
-        );
-    }
-
-    /**
      * Finds completed child import identifiers in page order.
      *
      * @param int $parent_import_id Parent import identifier
@@ -1064,24 +1002,6 @@ class ImportEntityRepository
     }
 
     /**
-     * Counts staged DTOs of the requested type.
-     *
-     * @param int    $import_id   Import identifier
-     * @param string $entity_type Entity type
-     *
-     * @return int
-     */
-    public function countByEntityType($import_id, $entity_type)
-    {
-        return (int) $this->database->getField(
-            'SELECT COUNT(*) FROM ?:?p WHERE import_id = ?i AND entity_type = ?s',
-            self::TABLE_NAME,
-            $import_id,
-            $entity_type
-        );
-    }
-
-    /**
      * Counts unique staged DTOs across several import runs.
      *
      * @param array<int> $import_ids  Import identifiers
@@ -1102,91 +1022,6 @@ class ImportEntityRepository
             $import_ids,
             $entity_type
         );
-    }
-
-    /**
-     * Finds DTOs from several import runs.
-     *
-     * @param array<int> $import_ids  Import identifiers in precedence order
-     * @param string     $entity_type Entity type
-     * @param bool       $deduplicate Whether a later entity must replace an earlier one
-     *
-     * @return array<array-key, \Tygh\Addons\Synchro\Dto\RepresentEntityDto>
-     */
-    public function findAllByEntityTypeFromImports(array $import_ids, $entity_type, $deduplicate = true)
-    {
-        if (!$import_ids) {
-            return [];
-        }
-
-        $rows = $this->database->getArray(
-            'SELECT entities.entity_id, entities.entity FROM ?:?p AS entities'
-            . ' INNER JOIN ?:?p AS imports ON imports.import_id = entities.import_id'
-            . ' WHERE entities.import_id IN (?n) AND entities.entity_type = ?s'
-            . ' ORDER BY imports.page_from, imports.import_id, entities.entity_id',
-            self::TABLE_NAME,
-            self::IMPORTS_TABLE_NAME,
-            $import_ids,
-            $entity_type
-        );
-        $entities = [];
-
-        foreach ($rows as $row) {
-            /** @var \Tygh\Addons\Synchro\Dto\RepresentEntityDto $entity */
-            $entity = unserialize($row['entity']);
-            if ($deduplicate) {
-                $entities[(string) $row['entity_id']] = $entity;
-            } else {
-                $entities[] = $entity;
-            }
-        }
-
-        return array_values($entities);
-    }
-
-    /**
-     * Finds a bounded entity batch from several import runs.
-     *
-     * @param array<int> $import_ids      Import identifiers
-     * @param string     $entity_type     Entity type
-     * @param string     $after_entity_id Last processed entity identifier
-     * @param int        $limit           Batch size
-     *
-     * @return array<array-key, \Tygh\Addons\Synchro\Dto\RepresentEntityDto>
-     */
-    public function findEntityBatch(array $import_ids, $entity_type, $after_entity_id, $limit)
-    {
-        if (!$import_ids || $limit < 1) {
-            return [];
-        }
-
-        $serialized_entities = $this->database->getColumn(
-            'SELECT entities.entity FROM ?:?p AS entities'
-            . ' INNER JOIN ('
-            . ' SELECT entity_id, MAX(import_id) AS import_id FROM ?:?p'
-            . ' WHERE import_id IN (?n) AND entity_type = ?s AND entity_id > ?s GROUP BY entity_id'
-            . ' ) AS latest ON latest.import_id = entities.import_id AND latest.entity_id = entities.entity_id'
-            . ' WHERE entities.entity_type = ?s ORDER BY entities.entity_id LIMIT ?i',
-            self::TABLE_NAME,
-            self::TABLE_NAME,
-            $import_ids,
-            $entity_type,
-            $after_entity_id,
-            $entity_type,
-            $limit
-        );
-        $entities = [];
-
-        foreach ($serialized_entities as $serialized_entity) {
-            /** @var \Tygh\Addons\Synchro\Dto\RepresentEntityDto $entity */
-            $entity = unserialize($serialized_entity);
-            if (!$entity instanceof RepresentEntityDto || $entity->getEntityType() !== $entity_type) {
-                throw new UnexpectedValueException(__('synchro.exception.stored_entity_type_mismatch'));
-            }
-            $entities[] = $entity;
-        }
-
-        return $entities;
     }
 
     /**
@@ -1346,39 +1181,6 @@ class ImportEntityRepository
         );
 
         return (int) $result;
-    }
-
-    /**
-     * Finds stored DTOs by entity type and identifiers.
-     *
-     * @param int                      $import_id   Import identifier
-     * @param string                   $entity_type Entity type
-     * @param array<array-key, string> $entity_ids  Entity identifiers
-     *
-     * @return array<array-key, \Tygh\Addons\Synchro\Dto\RepresentEntityDto>
-     */
-    public function findByEntityIds($import_id, $entity_type, array $entity_ids)
-    {
-        if (!$entity_ids) {
-            return [];
-        }
-
-        $serialized_entities = $this->database->getColumn(
-            'SELECT entity FROM ?:?p WHERE import_id = ?i AND entity_type = ?s AND entity_id IN (?a)',
-            self::TABLE_NAME,
-            $import_id,
-            $entity_type,
-            $entity_ids
-        );
-        $entities = [];
-
-        foreach ($serialized_entities as $serialized_entity) {
-            /** @var \Tygh\Addons\Synchro\Dto\RepresentEntityDto $entity */
-            $entity = unserialize($serialized_entity);
-            $entities[] = $entity;
-        }
-
-        return $entities;
     }
 
     /**

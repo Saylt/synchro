@@ -24,23 +24,6 @@ class ImportedManufacturerReader
     }
 
     /**
-     * Reads the latest completed manufacturer snapshot as a single feature.
-     *
-     * @param int $company_id Company identifier
-     *
-     * @return array{0: int, 1: \Tygh\Addons\Synchro\Dto\ProductFeatureDto|null}
-     */
-    public function readLatest($company_id)
-    {
-        $import_id = $this->repository->findLatestCompletedImportId(
-            $company_id,
-            ManufacturerDto::ENTITY_TYPE
-        );
-
-        return $import_id ? [$import_id, $this->readByImportId($import_id)] : [0, null];
-    }
-
-    /**
      * Builds a manufacturer feature from one completed snapshot.
      *
      * @param int $import_id Import identifier

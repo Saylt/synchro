@@ -379,22 +379,6 @@ class ServiceProvider implements ServiceProviderInterface
     }
 
     /**
-     * @return \Tygh\Addons\Synchro\Importers\ProductFeatureImporter
-     */
-    public static function getProductFeatureImporter()
-    {
-        return Tygh::$app['addons.synchro.importers.product_feature'];
-    }
-
-    /**
-     * @return \Tygh\Addons\Synchro\Importers\ProductImporter
-     */
-    public static function getProductImporter()
-    {
-        return Tygh::$app['addons.synchro.importers.product'];
-    }
-
-    /**
      * Gets the direct product synchronization manager.
      *
      * @return \Tygh\Addons\Synchro\ProductSynchronizationManager

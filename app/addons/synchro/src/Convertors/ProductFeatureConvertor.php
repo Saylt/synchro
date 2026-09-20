@@ -46,20 +46,6 @@ class ProductFeatureConvertor
     }
 
     /**
-     * Converts product properties without adding them to the staging snapshot.
-     *
-     * @param array<array-key, array<string, int|string>> $data External product properties
-     *
-     * @return array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>
-     */
-    public function convertProductFeatures(array $data)
-    {
-        list($features) = $this->convertProperties($data, false);
-
-        return $features;
-    }
-
-    /**
      * Converts product properties and optionally accumulates feature definitions for staging.
      *
      * @param array<array-key, array<string, int|string>> $data             External product properties
