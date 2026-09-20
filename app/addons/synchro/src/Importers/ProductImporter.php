@@ -185,11 +185,11 @@ class ProductImporter
         $external_manufacturer_ids = [];
 
         foreach ($products as $product) {
-            foreach ($product->features as $feature) {
-                $external_feature_ids[] = $feature->getEntityId();
+            foreach ($product->feature_variant_ids as $external_feature_id => $product_variant_ids) {
+                $external_feature_ids[] = $external_feature_id;
 
-                foreach ($feature->variants as $variant) {
-                    $external_variant_ids[] = $variant->getEntityId();
+                foreach ($product_variant_ids as $external_variant_id) {
+                    $external_variant_ids[] = $external_variant_id;
                 }
             }
             if (!$product->manufacturer instanceof ManufacturerDto) {
@@ -537,9 +537,7 @@ class ProductImporter
         $values = [];
         $conflicted_features = [];
 
-        foreach ($product->features as $feature) {
-            $external_feature_id = $feature->getEntityId();
-
+        foreach ($product->feature_variant_ids as $external_feature_id => $product_variant_ids) {
             if (!array_key_exists($external_feature_id, $feature_mappings)) {
                 $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.feature_mapping_not_found', [
                     '[external_id]'         => $product->getEntityId(),
@@ -554,8 +552,7 @@ class ProductImporter
                 continue;
             }
 
-            foreach ($feature->variants as $variant) {
-                $external_variant_id = $variant->getEntityId();
+            foreach ($product_variant_ids as $external_variant_id) {
                 $variant_id = isset($variant_mappings[$external_variant_id]['local_id'])
                     ? (int) $variant_mappings[$external_variant_id]['local_id']
                     : 0;

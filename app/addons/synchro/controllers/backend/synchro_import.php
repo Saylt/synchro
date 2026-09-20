@@ -21,13 +21,23 @@ $source_import_id = isset($_REQUEST['import_id']) && is_scalar($_REQUEST['import
     ? (int) $_REQUEST['import_id']
     : 0;
 $log_source = 'synchro_import.' . $mode;
+if ($cron_script_id) {
+    register_shutdown_function(static function ($script_id) {
+        ServiceProvider::getCronManager()->reportTaskPeakMemory($script_id);
+    }, $cron_script_id);
+}
 
-$product_application_modes = [
-    'apply_products'      => ProductApplicationManager::MODE_FULL,
-    'apply_test_products' => ProductApplicationManager::MODE_TEST,
-    'actualize_products'  => ProductApplicationManager::MODE_ACTUALIZE,
-];
-if ($mode === 'apply_categories' || isset($product_application_modes[$mode])) {
+if (
+    $mode === 'apply_categories'
+    || $mode === 'apply_products'
+    || $mode === 'apply_test_products'
+    || $mode === 'actualize_products'
+) {
+    $product_application_modes = [
+        'apply_products'      => ProductApplicationManager::MODE_FULL,
+        'apply_test_products' => ProductApplicationManager::MODE_TEST,
+        'actualize_products'  => ProductApplicationManager::MODE_ACTUALIZE,
+    ];
     $script = $cron_script_id ? $cron_manager->getCronScriptData($cron_script_id) : [];
     if (!$source_import_id || !$script) {
         return [CONTROLLER_STATUS_NO_PAGE];
@@ -155,6 +165,10 @@ if ($mode === 'product_application_process' || $mode === 'category_application_p
     }
 
     Registry::set('runtime.company_id', $process['company_id']);
+    $process_metric_id = $cron_manager->startProcessMetric(
+        (int) $process['cron_script_id'],
+        $source_import_id
+    );
 
     try {
         $import_process_manager->ensureProcessCanContinue($source_import_id);
@@ -167,6 +181,7 @@ if ($mode === 'product_application_process' || $mode === 'category_application_p
             ServiceProvider::getCategoryApplicationManager()->process($process);
         }
         $import_process_manager->ensureProcessCanContinue($source_import_id);
+        $cron_manager->finishProcessMetric($process_metric_id, ImportEntityRepository::STATUS_COMPLETED);
         $import_process_manager->completeProcess($source_import_id);
         if (
             $mode === 'product_application_process'
@@ -175,11 +190,13 @@ if ($mode === 'product_application_process' || $mode === 'category_application_p
             ServiceProvider::getProductArchivingManager()->queueAfterApplication($process);
         }
     } catch (TaskInterruptedException $exception) {
+        $cron_manager->finishProcessMetric($process_metric_id, ImportEntityRepository::STATUS_CANCELLED);
         $import_process_manager->cancelProcess($source_import_id);
         $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
+        $cron_manager->finishProcessMetric($process_metric_id, ImportEntityRepository::STATUS_FAILED);
         $import_process_manager->failProcess($source_import_id, $exception->getMessage());
         $logging->error($log_source, $exception->getMessage());
 
@@ -254,6 +271,10 @@ if ($mode === 'product_process') {
 
     Registry::set('runtime.company_id', $process['company_id']);
     $command_bus = ServiceProvider::getCommandBus();
+    $process_metric_id = $cron_manager->startProcessMetric(
+        (int) $process['cron_script_id'],
+        $import_id
+    );
 
     try {
         for ($page = $process['page_from']; $page <= $process['page_to']; $page++) {
@@ -283,12 +304,15 @@ if ($mode === 'product_process') {
 
         $import_process_manager->ensureProcessCanContinue($import_id);
         $import_process_manager->completeProcess($import_id);
+        $cron_manager->finishProcessMetric($process_metric_id, ImportEntityRepository::STATUS_COMPLETED);
     } catch (TaskInterruptedException $exception) {
+        $cron_manager->finishProcessMetric($process_metric_id, ImportEntityRepository::STATUS_CANCELLED);
         $import_process_manager->cancelProcess($import_id);
         $logging->error($log_source, $exception->getMessage());
 
         return [CONTROLLER_STATUS_NO_CONTENT];
     } catch (Throwable $exception) {
+        $cron_manager->finishProcessMetric($process_metric_id, ImportEntityRepository::STATUS_FAILED);
         $import_process_manager->failProcess($import_id, $exception->getMessage());
         $logging->error($log_source, $exception->getMessage());
 

@@ -36,6 +36,10 @@ class ImportEntityRepository
 
     const SOURCE_TYPE_TEST = 'test';
 
+    const COLLECT_PRODUCT_FEATURES_YES = 'Y';
+
+    const COLLECT_PRODUCT_FEATURES_NO = 'N';
+
     const IMPORT_INTEGER_FIELDS = [
         'import_id',
         'parent_import_id',
@@ -84,6 +88,7 @@ class ImportEntityRepository
      *     total_pages: int,
      *     max_parallel_processes: int,
      *     source_type?: string,
+     *     collect_product_features?: string,
      *     staging_import_id?: int
      * } $plan
      *
@@ -94,6 +99,10 @@ class ImportEntityRepository
         $source_type = isset($plan['source_type']) && $plan['source_type'] === self::SOURCE_TYPE_TEST
             ? self::SOURCE_TYPE_TEST
             : self::SOURCE_TYPE_FULL;
+        $collect_product_features = isset($plan['collect_product_features'])
+            && $plan['collect_product_features'] === self::COLLECT_PRODUCT_FEATURES_YES
+            ? self::COLLECT_PRODUCT_FEATURES_YES
+            : self::COLLECT_PRODUCT_FEATURES_NO;
 
         return $this->database->replaceInto(self::IMPORTS_TABLE_NAME, [
             'parent_import_id'       => 0,
@@ -102,6 +111,7 @@ class ImportEntityRepository
             'company_id'             => $company_id,
             'entity_type'            => $entity_type,
             'source_type'            => $source_type,
+            'collect_product_features' => $collect_product_features,
             'process_group'          => 0,
             'process_stage'          => EntityApplicationPlanBuilder::STAGE_FETCH,
             'status'                 => self::STATUS_PROCESSING,
@@ -133,6 +143,7 @@ class ImportEntityRepository
      *     max_parallel_processes: int,
      *     staging_import_id?: int,
      *     source_type?: string,
+     *     collect_product_features?: string,
      *     ranges: array<array-key, array{
      *         page_from: int,
      *         page_to: int,
@@ -150,6 +161,10 @@ class ImportEntityRepository
         $source_type = isset($plan['source_type']) && $plan['source_type'] === self::SOURCE_TYPE_TEST
             ? self::SOURCE_TYPE_TEST
             : self::SOURCE_TYPE_FULL;
+        $collect_product_features = isset($plan['collect_product_features'])
+            && $plan['collect_product_features'] === self::COLLECT_PRODUCT_FEATURES_YES
+            ? self::COLLECT_PRODUCT_FEATURES_YES
+            : self::COLLECT_PRODUCT_FEATURES_NO;
         $staging_import_id = isset($plan['staging_import_id']) ? (int) $plan['staging_import_id'] : 0;
         $ranges = [];
 
@@ -173,7 +188,8 @@ class ImportEntityRepository
                 $cron_script_id,
                 $ranges,
                 $plan['page_limit'],
-                $source_type
+                $source_type,
+                $collect_product_features
             );
             $this->database->commit();
         } catch (Throwable $exception) {
@@ -195,6 +211,7 @@ class ImportEntityRepository
      * @param array  $ranges           Page ranges
      * @param int    $page_limit       API page limit
      * @param string $source_type      Staged snapshot type
+     * @param string $collect_product_features Whether children collect product features
      *
      * @psalm-param array<array-key, array{
      *     page_from: int,
@@ -213,11 +230,15 @@ class ImportEntityRepository
         $cron_script_id,
         array $ranges,
         $page_limit,
-        $source_type = self::SOURCE_TYPE_FULL
+        $source_type = self::SOURCE_TYPE_FULL,
+        $collect_product_features = self::COLLECT_PRODUCT_FEATURES_NO
     ) {
         $source_type = $source_type === self::SOURCE_TYPE_TEST
             ? self::SOURCE_TYPE_TEST
             : self::SOURCE_TYPE_FULL;
+        $collect_product_features = $collect_product_features === self::COLLECT_PRODUCT_FEATURES_YES
+            ? self::COLLECT_PRODUCT_FEATURES_YES
+            : self::COLLECT_PRODUCT_FEATURES_NO;
         $import_ids = [];
 
         foreach ($ranges as $range) {
@@ -228,6 +249,7 @@ class ImportEntityRepository
                 'company_id'       => $company_id,
                 'entity_type'      => $entity_type,
                 'source_type'      => $source_type,
+                'collect_product_features' => $collect_product_features,
                 'process_group'    => isset($range['process_group']) ? (int) $range['process_group'] : 0,
                 'process_stage'    => isset($range['process_stage'])
                     ? (string) $range['process_stage']
@@ -1389,13 +1411,26 @@ class ImportEntityRepository
         if (!$records) {
             return 0;
         }
+        $replace_query = function($records) {
+            return $this->database->replaceInto(
+                self::TABLE_NAME,
+                $records,
+                true,
+                ['entity', 'updated_at']
+            );
+        };
+        try {
+            $result = $replace_query($records);
+        } catch (DatabaseException $exception) {
+            if (preg_match('#<b>\((1205|1213)\)</b>#', $exception->getMessage())) {
+                usleep(random_int(2*10**6, 5*10**6));
+                $result = $replace_query($records);
+            } else {
+                throw $exception;
+            }
+        }
 
-        return $this->database->replaceInto(
-            self::TABLE_NAME,
-            $records,
-            true,
-            ['entity', 'updated_at']
-        );
+        return $result;
     }
 
     /**

@@ -78,6 +78,8 @@ class ImageImporter
     public function import($object_id, $object_type, array $image_urls, $updated_at_timestamp, array $current_images)
     {
         $result = new OperationResult(true);
+        //FIXME
+        return $result;
         $detailed_images = [];
         $pairs_data = [];
         $processed_images = [];

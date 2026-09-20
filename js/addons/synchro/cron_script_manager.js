@@ -22,6 +22,7 @@
                 $.each(data.synchro_cron_statuses, function (script_id, status) {
                     $('[data-ca-synchro-last-launch="' + script_id + '"]').text(status.last_launch);
                     $('[data-ca-synchro-progress-status="' + script_id + '"]').text(status.progress_status);
+                    $('[data-ca-synchro-task-metric="' + script_id + '"]').text(status.metric);
                 });
             }
         });

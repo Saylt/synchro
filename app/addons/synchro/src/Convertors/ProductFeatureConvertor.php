@@ -4,18 +4,15 @@ namespace Tygh\Addons\Synchro\Convertors;
 
 use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
 use Tygh\Addons\Synchro\Dto\ProductFeatureVariantDto;
-use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 
 /**
  * Converts product feature data received from the external API.
  */
 class ProductFeatureConvertor implements ConvertorInterface
 {
-    /** @var \Tygh\Addons\Synchro\Repository\ImportEntityRepository */
+    /** @var \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository */
     private $repository;
-
-    /** @var int */
-    private $company_id;
 
     /** @var array<string, \Tygh\Addons\Synchro\Dto\ProductFeatureDto> */
     private $changed_features = [];
@@ -23,13 +20,11 @@ class ProductFeatureConvertor implements ConvertorInterface
     /**
      * Initializes the product feature convertor.
      *
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository $repository Import entity repository
-     * @param int                                                    $company_id Company identifier
+     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository $repository Product feature snapshot repository
      */
-    public function __construct(ImportEntityRepository $repository, $company_id)
+    public function __construct(ProductFeatureSnapshotRepository $repository)
     {
         $this->repository = $repository;
-        $this->company_id = $company_id;
     }
 
     /**
@@ -44,50 +39,86 @@ class ProductFeatureConvertor implements ConvertorInterface
      */
     public function convert(array $data, $import_id = 0, $cron_script_id = 0, $import_process_id = 0)
     {
-        if (!$data) {
-            return [];
-        }
+        list($features) = $this->convertProperties($data, true);
 
-        $product_features = [];
-        /** @var array<array-key, array> $source_features */
-        $source_features = $data;
-
-        foreach ($source_features as $source_feature) {
-            $feature_id = (string) $source_feature['id'];
-            $product_feature = $this->createProductFeature($source_feature);
-
-            if (!isset($this->changed_features[$feature_id])) {
-                $this->changed_features[$feature_id] = clone $product_feature;
-            }
-
-            $feature = $this->changed_features[$feature_id];
-            $feature->name = $product_feature->name;
-            $feature->group_id = $product_feature->group_id;
-            $feature->position = $product_feature->position;
-            $feature->group_name = $product_feature->group_name;
-            $variant = reset($product_feature->variants);
-            $feature->variants[$variant->getEntityId()] = $variant;
-            $product_features[] = $product_feature;
-        }
-
-        return $product_features;
+        return $features;
     }
 
     /**
-     * Converts product features without changing the staging snapshot.
+     * Converts product properties into compact feature-to-variant assignments.
      *
-     * @param array<array-key, array<string, int|string>> $data External API feature data
+     * When an import identifier is provided, also accumulates complete feature
+     * definitions for the staging snapshot.
+     *
+     * @param array<array-key, array<string, int|string>> $data      External product properties
+     * @param int                                         $import_id Import identifier
+     *
+     * @return array<string, array<int, string>>
+     */
+    public function convertProductFeatureVariantIds(array $data, $import_id = 0)
+    {
+        list(, $feature_variant_ids) = $this->convertProperties($data, (bool) $import_id);
+
+        return $feature_variant_ids;
+    }
+
+    /**
+     * Converts product properties without adding them to the staging snapshot.
+     *
+     * @param array<array-key, array<string, int|string>> $data External product properties
      *
      * @return array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>
      */
     public function convertProductFeatures(array $data)
     {
-        $features = [];
-        foreach ($data as $source_feature) {
-            $features[] = $this->createProductFeature($source_feature);
-        }
+        list($features) = $this->convertProperties($data, false);
 
         return $features;
+    }
+
+    /**
+     * Converts product properties and optionally accumulates feature definitions for staging.
+     *
+     * @param array<array-key, array<string, int|string>> $data             External product properties
+     * @param bool                                        $collect_for_stage Whether to collect full feature definitions
+     *
+     * @return array{0: array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto>, 1: array<string, array<int, string>>}
+     */
+    private function convertProperties(array $data, $collect_for_stage)
+    {
+        if (!$data) {
+            return [[], []];
+        }
+
+        $product_features = [];
+        $feature_variant_ids = [];
+
+        foreach ($data as $source_feature) {
+            $feature = $this->createProductFeature($source_feature);
+            $feature_id = $feature->getEntityId();
+            $product_features[] = $feature;
+            foreach (array_keys($feature->variants) as $variant_id) {
+                $feature_variant_ids[$feature_id][] = $variant_id;
+            }
+
+            if (!$collect_for_stage) {
+                continue;
+            }
+
+            if (!isset($this->changed_features[$feature_id])) {
+                $this->changed_features[$feature_id] = clone $feature;
+                continue;
+            }
+
+            $stored_feature = $this->changed_features[$feature_id];
+            $stored_feature->name = $feature->name;
+            $stored_feature->group_id = $feature->group_id;
+            $stored_feature->position = $feature->position;
+            $stored_feature->group_name = $feature->group_name;
+            $stored_feature->variants = array_replace($stored_feature->variants, $feature->variants);
+        }
+
+        return [$product_features, $feature_variant_ids];
     }
 
     /**
@@ -116,7 +147,7 @@ class ProductFeatureConvertor implements ConvertorInterface
     }
 
     /**
-     * Merges changed product features with stored variants and saves the batch.
+     * Saves changed product features and variants for the active import portion.
      *
      * @param int $import_id Import identifier
      *
@@ -128,24 +159,7 @@ class ProductFeatureConvertor implements ConvertorInterface
             return 0;
         }
 
-        $stored_features = $this->repository->findByEntityIds(
-            $import_id,
-            ProductFeatureDto::ENTITY_TYPE,
-            array_keys($this->changed_features)
-        );
-
-        /** @var \Tygh\Addons\Synchro\Dto\ProductFeatureDto $stored_feature */
-        foreach ($stored_features as $stored_feature) {
-            $feature_id = $stored_feature->getEntityId();
-            $feature = $this->changed_features[$feature_id];
-            $feature->variants = array_replace($stored_feature->variants, $feature->variants);
-        }
-
-        $result = $this->repository->batchSave(
-            $import_id,
-            $this->company_id,
-            array_values($this->changed_features)
-        );
+        $result = $this->repository->savePortion($import_id, array_values($this->changed_features));
         $this->changed_features = [];
 
         return $result;

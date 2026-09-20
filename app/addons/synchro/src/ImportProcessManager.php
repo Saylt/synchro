@@ -9,6 +9,7 @@ use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Exceptions\TaskInterruptedException;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 use Tygh\Lock\Factory;
 
 /**
@@ -18,10 +19,13 @@ class ImportProcessManager
 {
     const LOCK_PREFIX = 'synchro_import_parent_';
 
-    const STALE_PROCESS_TIMEOUT = SECONDS_IN_DAY;
+    const STALE_PROCESS_TIMEOUT = 60 * 7;
 
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityRepository */
     private $repository;
+
+    /** @var \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository */
+    private $product_feature_snapshot_repository;
 
     /** @var \Tygh\Addons\Synchro\ProductImportRangeBuilder */
     private $range_builder;
@@ -52,6 +56,7 @@ class ImportProcessManager
 
     /**
      * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository        $repository               Import repository
+     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository $product_feature_snapshot_repository Product feature snapshots
      * @param \Tygh\Addons\Synchro\ProductImportRangeBuilder                $range_builder            Range builder
      * @param \Tygh\Addons\Synchro\Application\EntityApplicationPlanBuilder $application_plan_builder Application plan builder
      * @param \Tygh\Addons\Synchro\CronManager                              $cron_manager             Cron manager
@@ -64,6 +69,7 @@ class ImportProcessManager
      */
     public function __construct(
         ImportEntityRepository $repository,
+        ProductFeatureSnapshotRepository $product_feature_snapshot_repository,
         ProductImportRangeBuilder $range_builder,
         EntityApplicationPlanBuilder $application_plan_builder,
         CronManager $cron_manager,
@@ -75,6 +81,7 @@ class ImportProcessManager
         callable $process_launcher = null
     ) {
         $this->repository = $repository;
+        $this->product_feature_snapshot_repository = $product_feature_snapshot_repository;
         $this->range_builder = $range_builder;
         $this->application_plan_builder = $application_plan_builder;
         $this->cron_manager = $cron_manager;
@@ -133,6 +140,10 @@ class ImportProcessManager
         $plan['source_type'] = $settings['is_test_import'] === 'Y'
             ? ImportEntityRepository::SOURCE_TYPE_TEST
             : ImportEntityRepository::SOURCE_TYPE_FULL;
+        $plan['collect_product_features'] = isset($script['post_process'])
+            && $script['post_process'] === CronManager::POST_PROCESS_ACTUALIZE_PRODUCTS
+            ? ImportEntityRepository::COLLECT_PRODUCT_FEATURES_NO
+            : ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES;
 
         return $this->repository->createImportHierarchy(
             $company_id,
@@ -417,6 +428,31 @@ class ImportProcessManager
             }
 
             $this->repository->updateImportStatus($parent_import_id, $result_status);
+            if ($this->isProductFeatureCollectionProcess($parent)) {
+                if ($result_status === ImportEntityRepository::STATUS_COMPLETED) {
+                    $superseded_snapshot_ids = $this->product_feature_snapshot_repository->findSupersededSnapshotIds(
+                        isset($parent['company_id']) ? (int) $parent['company_id'] : 0,
+                        isset($parent['source_type'])
+                            ? (string) $parent['source_type']
+                            : ImportEntityRepository::SOURCE_TYPE_FULL,
+                        $parent_import_id
+                    );
+                    if ($superseded_snapshot_ids) {
+                        $this->product_feature_snapshot_repository->deleteByImportIds($superseded_snapshot_ids);
+                    }
+                } else {
+                    $snapshot_import_ids = [$parent_import_id];
+                    foreach ($children as $child) {
+                        $snapshot_import_ids[] = (int) $child['import_id'];
+                    }
+                    $this->product_feature_snapshot_repository->deleteByImportIds($snapshot_import_ids);
+                }
+            } elseif (
+                $result_status === ImportEntityRepository::STATUS_COMPLETED
+                && !empty($parent['staging_import_id'])
+            ) {
+                $this->removeSnapshotsSupersededDuringApplication((int) $parent['staging_import_id']);
+            }
             $is_task_finalized = $this->cron_manager->finalizeDeferredTask(
                 (int) $parent['cron_script_id'],
                 $result_status
@@ -500,6 +536,18 @@ class ImportProcessManager
             }
 
             $children = $this->repository->findChildren((int) $parent['import_id']);
+            $metrics = $this->cron_manager->getLatestProcessMetrics(array_map(
+                'intval',
+                array_column($children, 'import_id')
+            ));
+            foreach ($children as &$child) {
+                $import_id = (int) $child['import_id'];
+                if (isset($metrics[$import_id])) {
+                    $child['execution_time'] = (int) $metrics[$import_id]['execution_time'];
+                    $child['peak_memory_usage'] = (int) $metrics[$import_id]['peak_memory_usage'];
+                }
+            }
+            unset($child);
             $processes[$cron_script_id] = [
                 'parent'          => $parent,
                 'children'        => $children,
@@ -540,7 +588,19 @@ class ImportProcessManager
             return;
         }
 
-        $this->repository->completeChild($import_id);
+        if (
+            isset($process['entity_type'])
+            && $process['entity_type'] === ImportDataCommand::ENTITY_PRODUCTS
+            && isset($process['collect_product_features'])
+            && $process['collect_product_features'] === ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES
+        ) {
+            $this->product_feature_snapshot_repository->mergeAndCompletePortion(
+                $import_id,
+                (int) $process['parent_import_id']
+            );
+        } else {
+            $this->repository->completeChild($import_id);
+        }
         if (
             !empty($process['staging_import_id'])
             && isset($process['process_stage'])
@@ -568,6 +628,9 @@ class ImportProcessManager
             return;
         }
 
+        if ($this->isProductFeatureCollectionProcess($process)) {
+            $this->product_feature_snapshot_repository->deleteByImportIds([$import_id]);
+        }
         $this->repository->failChild($import_id, $error);
         $this->continueParent((int) $process['parent_import_id']);
     }
@@ -588,6 +651,9 @@ class ImportProcessManager
             return;
         }
 
+        if ($this->isProductFeatureCollectionProcess($process)) {
+            $this->product_feature_snapshot_repository->deleteByImportIds([$import_id]);
+        }
         $this->repository->cancelChild($import_id);
         $this->continueParent((int) $process['parent_import_id']);
     }
@@ -650,6 +716,9 @@ class ImportProcessManager
             return false;
         }
 
+        if ($this->isProductFeatureCollectionProcess($process)) {
+            $this->product_feature_snapshot_repository->deleteByImportIds([$import_id]);
+        }
         if (!$this->repository->retryChild($import_id)) {
             return false;
         }
@@ -685,6 +754,19 @@ class ImportProcessManager
             return false;
         }
 
+        if ($this->isProductFeatureCollectionProcess($parent)) {
+            $snapshot_import_ids = [];
+            foreach ($this->repository->findChildren((int) $parent['import_id']) as $child) {
+                if (in_array($child['status'], [
+                    ImportEntityRepository::STATUS_FAILED,
+                    ImportEntityRepository::STATUS_CANCELLED,
+                ], true)) {
+                    $snapshot_import_ids[] = (int) $child['import_id'];
+                }
+            }
+            $this->product_feature_snapshot_repository->deleteByImportIds($snapshot_import_ids);
+        }
+
         if (!$this->repository->retryChildren((int) $parent['import_id'])) {
             return false;
         }
@@ -708,6 +790,9 @@ class ImportProcessManager
         $parent_import_ids = [];
 
         foreach ($stale_processes as $process) {
+            if ($this->isProductFeatureCollectionProcess($process)) {
+                $this->product_feature_snapshot_repository->deleteByImportIds([(int) $process['import_id']]);
+            }
             $this->repository->failChild(
                 (int) $process['import_id'],
                 'The import process stopped reporting progress'
@@ -733,6 +818,59 @@ class ImportProcessManager
     {
         $this->dispatchPending($parent_import_id);
         $this->reconcileParent($parent_import_id);
+    }
+
+    /**
+     * Checks whether an import process owns a normalized product-feature snapshot.
+     *
+     * @param array<string, int|string> $process Import process
+     *
+     * @return bool
+     */
+    private function isProductFeatureCollectionProcess(array $process)
+    {
+        return isset($process['entity_type'], $process['collect_product_features'])
+            && $process['entity_type'] === ImportDataCommand::ENTITY_PRODUCTS
+            && $process['collect_product_features'] === ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES;
+    }
+
+    /**
+     * Removes snapshots retained while their product application was active.
+     *
+     * Failed or stopped applications intentionally retain their staging data
+     * for a possible retry. Only a completed application releases its source.
+     *
+     * @param int $staging_import_id Product snapshot used by the application
+     *
+     * @return void
+     */
+    private function removeSnapshotsSupersededDuringApplication($staging_import_id)
+    {
+        $staging_import = $this->repository->findImport($staging_import_id);
+        if (!$staging_import || !$this->isProductFeatureCollectionProcess($staging_import)) {
+            return;
+        }
+
+        $company_id = isset($staging_import['company_id']) ? (int) $staging_import['company_id'] : 0;
+        $source_type = isset($staging_import['source_type'])
+            ? (string) $staging_import['source_type']
+            : ImportEntityRepository::SOURCE_TYPE_FULL;
+        $latest_snapshot_id = $this->product_feature_snapshot_repository->findLatestSnapshotId(
+            $company_id,
+            $source_type
+        );
+        if (!$latest_snapshot_id) {
+            return;
+        }
+
+        $superseded_snapshot_ids = $this->product_feature_snapshot_repository->findSupersededSnapshotIds(
+            $company_id,
+            $source_type,
+            $latest_snapshot_id
+        );
+        if ($superseded_snapshot_ids) {
+            $this->product_feature_snapshot_repository->deleteByImportIds($superseded_snapshot_ids);
+        }
     }
 
     /**

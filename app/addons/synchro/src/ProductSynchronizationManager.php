@@ -90,7 +90,11 @@ class ProductSynchronizationManager
                 if (!empty($source_product['error'])) {
                     throw new RuntimeException((string) $source_product['error']);
                 }
-                $product = $this->product_dto_factory->create($source_product);
+                $product = $this->product_dto_factory->create(
+                    $source_product,
+                    0,
+                    $mode !== self::MODE_ACTUALIZE
+                );
                 $import_result = $this->product_importer->import(
                     [$product],
                     $company_id,

@@ -44,8 +44,8 @@ class ProductDto implements RepresentEntityDto
     /** @var array<array-key, array{url: string, hash: string}> */
     public $images = [];
 
-    /** @var array<array-key, \Tygh\Addons\Synchro\Dto\ProductFeatureDto> */
-    public $features = [];
+    /** @var array<string, array<int, string>> */
+    public $feature_variant_ids = [];
 
     /** @var array<array-key, \Tygh\Addons\Synchro\Dto\WarehouseDto> */
     public $warehouses = [];

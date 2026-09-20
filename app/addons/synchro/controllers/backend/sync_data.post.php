@@ -25,60 +25,38 @@ if (
     ]);
 
     $company_id = fn_get_runtime_company_id();
-    list($import_id, $features) = ServiceProvider::getImportedProductFeatureReader()->readLatest($company_id);
-    $external_feature_ids = [];
-
-    /** @var \Tygh\Addons\Synchro\Dto\ProductFeatureDto $feature */
-    foreach ($features as $feature) {
-        $external_feature_ids[] = $feature->getEntityId();
+    $params = [];
+    foreach (['page', 'q', 'mapping_status', 'items_per_page'] as $name) {
+        if (isset($_REQUEST[$name]) && is_scalar($_REQUEST[$name])) {
+            $params[$name] = (string) $_REQUEST[$name];
+        }
     }
-
-    $stored_mappings = ServiceProvider::getProductFeatureMappingRepository()->findByExternalIds(
-        $company_id,
-        $external_feature_ids
-    );
-    $local_feature_ids = array_values(array_unique(array_filter($stored_mappings)));
-    $local_features = $local_feature_ids
-        ? Tygh::$app['db']->getSingleHash(
-            'SELECT features.feature_id, descriptions.description FROM ?:product_features AS features'
-            . ' LEFT JOIN ?:product_features_descriptions AS descriptions'
-            . ' ON descriptions.feature_id = features.feature_id AND descriptions.lang_code = ?s'
-            . ' WHERE features.feature_id IN (?n)',
-            ['feature_id', 'description'],
-            CART_LANGUAGE,
-            $local_feature_ids
-        )
-        : [];
+    $items_per_page = !empty($params['items_per_page'])
+        ? (int) $params['items_per_page']
+        : (int) Registry::get('settings.Appearance.admin_elements_per_page');
+    $snapshot_repository = ServiceProvider::getProductFeatureSnapshotRepository();
+    $import_id = $snapshot_repository->findLatestMappingSnapshotId($company_id);
     $feature_mappings = [];
-
-    /** @var \Tygh\Addons\Synchro\Dto\ProductFeatureDto $feature */
-    foreach ($features as $feature) {
-        $external_feature_id = $feature->getEntityId();
-        $local_feature_id = isset($stored_mappings[$external_feature_id])
-            ? $stored_mappings[$external_feature_id]
-            : null;
-
-        $feature_mappings[] = [
-            'external_id'             => $external_feature_id,
-            'name'                    => $feature->name,
-            'group_name'              => $feature->group_name,
-            'variants_count'          => count($feature->variants),
-            'local_feature_id'        => $local_feature_id,
-            'local_feature_name'      => $local_feature_id > 0 && isset($local_features[$local_feature_id])
-                ? $local_features[$local_feature_id]
-                : '',
-            'is_local_feature_missing' => $local_feature_id > 0
-                && !array_key_exists($local_feature_id, $local_features),
-        ];
+    $search = [
+        'page'           => 1,
+        'items_per_page' => $items_per_page,
+        'total_items'    => 0,
+        'q'              => isset($params['q']) ? $params['q'] : '',
+        'mapping_status' => isset($params['mapping_status']) ? $params['mapping_status'] : 'all',
+    ];
+    if ($import_id) {
+        list($feature_mappings, $search) = $snapshot_repository->getMappingPage(
+            $import_id,
+            $company_id,
+            $params,
+            $items_per_page
+        );
     }
-
-    usort($feature_mappings, static function (array $left, array $right) {
-        return strcasecmp($left['name'], $right['name']);
-    });
 
     Tygh::$app['view']->assign([
         'synchro_import_id'        => $import_id,
         'synchro_feature_mappings' => $feature_mappings,
+        'search'                    => $search,
         'synchro_target_feature_types' => [
             ProductFeatures::TEXT_SELECTBOX,
             ProductFeatures::NUMBER_SELECTBOX,

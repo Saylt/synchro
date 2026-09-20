@@ -28,6 +28,7 @@ use Tygh\Addons\Synchro\Importers\WarehouseImporter;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 use Tygh\Registry;
 use Tygh\Tygh;
 
@@ -81,6 +82,7 @@ class ServiceProvider implements ServiceProviderInterface
 
             return new ImportProcessManager(
                 $app['addons.synchro.repository.import_entity'],
+                $app['addons.synchro.repository.product_feature_snapshot'],
                 $app['addons.synchro.product_import_range_builder'],
                 $app['addons.synchro.entity_application_plan_builder'],
                 $app['addons.synchro.cron_manager'],
@@ -121,10 +123,15 @@ class ServiceProvider implements ServiceProviderInterface
             return new ProductFeatureMappingRepository($app['db']);
         };
 
+        $app['addons.synchro.repository.product_feature_snapshot'] = static function (Container $app) {
+            return new ProductFeatureSnapshotRepository($app['db']);
+        };
+
         $app['addons.synchro.product_feature_mapping_manager'] = static function (Container $app) {
             return new ProductFeatureMappingManager(
                 $app['db'],
-                $app['addons.synchro.repository.product_feature_mapping']
+                $app['addons.synchro.repository.product_feature_mapping'],
+                $app['addons.synchro.repository.product_feature_snapshot']
             );
         };
 
@@ -187,10 +194,6 @@ class ServiceProvider implements ServiceProviderInterface
             );
         };
 
-        $app['addons.synchro.imported_product_feature_reader'] = static function (Container $app) {
-            return new ImportedProductFeatureReader($app['addons.synchro.repository.import_entity']);
-        };
-
         $app['addons.synchro.imported_manufacturer_reader'] = static function (Container $app) {
             return new ImportedManufacturerReader($app['addons.synchro.repository.import_entity']);
         };
@@ -198,7 +201,7 @@ class ServiceProvider implements ServiceProviderInterface
         $app['addons.synchro.product_application_manager'] = static function (Container $app) {
             return new ProductApplicationManager(
                 $app['addons.synchro.repository.import_entity'],
-                $app['addons.synchro.imported_product_feature_reader'],
+                $app['addons.synchro.repository.product_feature_snapshot'],
                 $app['addons.synchro.importers.product_feature'],
                 $app['addons.synchro.importers.product'],
                 $app['addons.synchro.repository.import_entity_map']
@@ -231,7 +234,8 @@ class ServiceProvider implements ServiceProviderInterface
                 $app['addons.synchro.convertors.product_feature'],
                 $app['addons.synchro.product_dto_factory'],
                 $app['addons.synchro.cron_manager'],
-                $app['addons.synchro.import_process_manager']
+                $app['addons.synchro.import_process_manager'],
+                $app['addons.synchro.logging']
             );
         };
 
@@ -253,8 +257,7 @@ class ServiceProvider implements ServiceProviderInterface
 
         $app['addons.synchro.convertors.product_feature'] = static function (Container $app) {
             return new ProductFeatureConvertor(
-                $app['addons.synchro.repository.import_entity'],
-                fn_get_runtime_company_id()
+                $app['addons.synchro.repository.product_feature_snapshot']
             );
         };
 
@@ -371,6 +374,16 @@ class ServiceProvider implements ServiceProviderInterface
     }
 
     /**
+     * Gets the repository for normalized product-feature snapshots.
+     *
+     * @return \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository
+     */
+    public static function getProductFeatureSnapshotRepository()
+    {
+        return Tygh::$app['addons.synchro.repository.product_feature_snapshot'];
+    }
+
+    /**
      * @return \Tygh\Addons\Synchro\ProductFeatureMappingManager
      */
     public static function getProductFeatureMappingManager()
@@ -426,14 +439,6 @@ class ServiceProvider implements ServiceProviderInterface
     public static function getManufacturerApplicationManager()
     {
         return Tygh::$app['addons.synchro.manufacturer_application_manager'];
-    }
-
-    /**
-     * @return \Tygh\Addons\Synchro\ImportedProductFeatureReader
-     */
-    public static function getImportedProductFeatureReader()
-    {
-        return Tygh::$app['addons.synchro.imported_product_feature_reader'];
     }
 
     /**

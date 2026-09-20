@@ -12,6 +12,8 @@ use Tygh\Addons\Synchro\ImportProcessManager;
  */
 class ProductConvertor implements ConvertorInterface
 {
+    const LOG_SOURCE = 'synchro_import.products';
+
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityRepository */
     private $repository;
 
@@ -30,6 +32,9 @@ class ProductConvertor implements ConvertorInterface
     /** @var \Tygh\Addons\Synchro\ImportProcessManager */
     private $import_process_manager;
 
+    /** @var \Tygh\Addons\Synchro\Logging */
+    private $logging;
+
     /**
      * Initializes the product convertor.
      *
@@ -39,6 +44,7 @@ class ProductConvertor implements ConvertorInterface
      * @param \Tygh\Addons\Synchro\Dto\ProductDtoFactory              $product_dto_factory       Product DTO factory
      * @param \Tygh\Addons\Synchro\CronManager                        $cron_manager              Cron task manager
      * @param \Tygh\Addons\Synchro\ImportProcessManager               $import_process_manager    Import process manager
+     * @param \Tygh\Addons\Synchro\Logging                            $logging                   Synchro journal
      */
     public function __construct(
         ImportEntityRepository $repository,
@@ -46,7 +52,8 @@ class ProductConvertor implements ConvertorInterface
         ProductFeatureConvertor $product_feature_convertor,
         ProductDtoFactory $product_dto_factory,
         CronManager $cron_manager,
-        ImportProcessManager $import_process_manager
+        ImportProcessManager $import_process_manager,
+        \Tygh\Addons\Synchro\Logging $logging
     ) {
         $this->repository = $repository;
         $this->company_id = $company_id;
@@ -54,6 +61,7 @@ class ProductConvertor implements ConvertorInterface
         $this->product_dto_factory = $product_dto_factory;
         $this->cron_manager = $cron_manager;
         $this->import_process_manager = $import_process_manager;
+        $this->logging = $logging;
     }
 
     /**
@@ -73,20 +81,32 @@ class ProductConvertor implements ConvertorInterface
         }
 
         $products = [];
+        $collect_product_features = $this->shouldCollectProductFeatures($import_process_id);
         /** @var array $source_products */
         $source_products = $data['data'];
 
         foreach ($source_products as $source_product) {
             $this->ensureImportCanContinue($cron_script_id, $import_process_id);
 
-            $product = $this->product_dto_factory->create($source_product);
-            $this->product_feature_convertor->convert($source_product['properties'], $import_id);
-
+            $product = $this->product_dto_factory->create(
+                $source_product,
+                $import_id,
+                $collect_product_features
+            );
+            if (!$product) {
+                $this->logging->warning(self::LOG_SOURCE, __('synchro.product_import_error.source_error', [
+                    '[external_id]' => $source_product['id'],
+                    '[error]'       => $source_product['error'],
+                ]));
+                continue;
+            }
             $products[] = $product;
         }
 
         $this->ensureImportCanContinue($cron_script_id, $import_process_id);
-        $this->product_feature_convertor->save($import_id);
+        if ($collect_product_features) {
+            $this->product_feature_convertor->save($import_id);
+        }
         $this->repository->batchSave($import_id, $this->company_id, $products);
 
         return $products;
@@ -111,5 +131,27 @@ class ProductConvertor implements ConvertorInterface
         }
 
         $this->cron_manager->ensureTaskCanContinue($cron_script_id);
+    }
+
+    /**
+     * Determines whether the active import process owns a feature snapshot.
+     *
+     * Point synchronization has no process and keeps full product assignments.
+     * Fetch workers use the immutable flag stored on their child process.
+     *
+     * @param int $import_process_id Import process identifier
+     *
+     * @return bool
+     */
+    private function shouldCollectProductFeatures($import_process_id)
+    {
+        if (!$import_process_id) {
+            return true;
+        }
+
+        $process = $this->import_process_manager->getProcess($import_process_id);
+
+        return isset($process['collect_product_features'])
+            && $process['collect_product_features'] === ImportEntityRepository::COLLECT_PRODUCT_FEATURES_YES;
     }
 }

@@ -22,12 +22,20 @@ class ProductDtoFactory
     /**
      * Converts one source product into a normalized product DTO.
      *
-     * @param array<string, array|float|int|string> $source_product Source product data
+     * @param array<string, array|float|int|string> $source_product           Source product data
+     * @param int                                    $import_id               Import identifier
+     * @param bool                                   $collect_product_features Whether properties populate feature assignments and the staging snapshot
      *
-     * @return \Tygh\Addons\Synchro\Dto\ProductDto
+     * @return \Tygh\Addons\Synchro\Dto\ProductDto|false
      */
-    public function create(array $source_product)
+    public function create(array $source_product, $import_id = 0, $collect_product_features = true)
     {
+        if (
+            isset($source_product['error'])
+            && !empty($source_product['error'])
+        ) {
+            return false;
+        }
         $product = new ProductDto();
         $product->id = $source_product['id'];
         $product->source_error = $source_product['error'];
@@ -51,7 +59,12 @@ class ProductDtoFactory
         $product->manufacturer = new ManufacturerDto();
         $product->manufacturer->id = $source_product['manufacturer']['id'];
         $product->manufacturer->name = $source_product['manufacturer']['title'];
-        $product->features = $this->product_feature_convertor->convertProductFeatures($source_product['properties']);
+        if ($collect_product_features) {
+            $product->feature_variant_ids = $this->product_feature_convertor->convertProductFeatureVariantIds(
+                $source_product['properties'],
+                $import_id
+            );
+        }
 
         foreach ($source_product['rests'] as $source_warehouse) {
             if ($source_warehouse['name'] === null || !$source_warehouse['rest']) {

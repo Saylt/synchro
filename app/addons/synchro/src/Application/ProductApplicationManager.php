@@ -6,11 +6,11 @@ use InvalidArgumentException;
 use RuntimeException;
 use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Dto\ProductDto;
-use Tygh\Addons\Synchro\ImportedProductFeatureReader;
 use Tygh\Addons\Synchro\Importers\ProductFeatureImporter;
 use Tygh\Addons\Synchro\Importers\ProductImporter;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
+use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 
 /**
  * Applies staged product DTOs to CS-Cart.
@@ -23,11 +23,13 @@ class ProductApplicationManager
 
     const MODE_ACTUALIZE = 'actualize';
 
+    const FEATURE_BATCH_SIZE = 100;
+
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityRepository */
     private $repository;
 
-    /** @var \Tygh\Addons\Synchro\ImportedProductFeatureReader */
-    private $feature_reader;
+    /** @var \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository */
+    private $feature_snapshot_repository;
 
     /** @var \Tygh\Addons\Synchro\Importers\ProductFeatureImporter */
     private $feature_importer;
@@ -39,21 +41,21 @@ class ProductApplicationManager
     private $mapping_repository;
 
     /**
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository    $repository         Staged entity repository
-     * @param \Tygh\Addons\Synchro\ImportedProductFeatureReader         $feature_reader     Imported feature reader
-     * @param \Tygh\Addons\Synchro\Importers\ProductFeatureImporter     $feature_importer   Product feature importer
-     * @param \Tygh\Addons\Synchro\Importers\ProductImporter            $product_importer   Product importer
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository $mapping_repository Entity mapping repository
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository             $repository                  Staged entity repository
+     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository    $feature_snapshot_repository Product feature snapshots
+     * @param \Tygh\Addons\Synchro\Importers\ProductFeatureImporter                $feature_importer            Product feature importer
+     * @param \Tygh\Addons\Synchro\Importers\ProductImporter                       $product_importer            Product importer
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository            $mapping_repository          Entity mapping repository
      */
     public function __construct(
         ImportEntityRepository $repository,
-        ImportedProductFeatureReader $feature_reader,
+        ProductFeatureSnapshotRepository $feature_snapshot_repository,
         ProductFeatureImporter $feature_importer,
         ProductImporter $product_importer,
         ImportEntityMapRepository $mapping_repository
     ) {
         $this->repository = $repository;
-        $this->feature_reader = $feature_reader;
+        $this->feature_snapshot_repository = $feature_snapshot_repository;
         $this->feature_importer = $feature_importer;
         $this->product_importer = $product_importer;
         $this->mapping_repository = $mapping_repository;
@@ -96,8 +98,23 @@ class ProductApplicationManager
      */
     private function prepare(array $staging_import)
     {
-        $features = $this->feature_reader->readByParentImportId($staging_import['import_id']);
-        $this->feature_importer->import($features, $staging_import['company_id']);
+        $after_external_feature_id = '';
+
+        while (true) {
+            $features = $this->feature_snapshot_repository->findMappedFeatureBatch(
+                (int) $staging_import['import_id'],
+                (int) $staging_import['company_id'],
+                $after_external_feature_id,
+                self::FEATURE_BATCH_SIZE
+            );
+            if (!$features) {
+                break;
+            }
+
+            $this->feature_importer->import($features, (int) $staging_import['company_id']);
+            $last_feature = $features[count($features) - 1];
+            $after_external_feature_id = $last_feature->getEntityId();
+        }
 
         return 0;
     }

@@ -88,6 +88,7 @@
 		{if $s.inner_status != 'scheduled'}
 			({__("synchro.`$s.inner_status`")})
 		{/if}
+		<div class="muted" data-ca-synchro-task-metric="{$s.script_id}">{$s.metric}</div>
 	</td>
 	<td data-ca-synchro-progress-status="{$s.script_id}">{$s.progress_status|default:"—"}</td>
 	<td>
@@ -158,6 +159,8 @@
 						<th>{__("synchro.process_details")}</th>
 						<th>{__("progress")}</th>
 						<th>{__("status")}</th>
+						<th>{__("synchro.execution_time")}</th>
+						<th>{__("synchro.peak_memory_usage")}</th>
 						<th>{__("error")}</th>
 						<th></th>
 					</tr>
@@ -193,6 +196,8 @@
 								{/if}
 							</td>
 							<td>{__("synchro.`$import_process.status`")}</td>
+							<td>{$synchro_cron_manager->formatExecutionTime($import_process.execution_time|default:0)}</td>
+							<td>{$synchro_cron_manager->formatMemoryUsage($import_process.peak_memory_usage|default:0)}</td>
 							<td>{$import_process.error_message|default:"—"}</td>
 							<td class="right nowrap">
 								{if $import_process.status|in_array:["queued", "processing"]}

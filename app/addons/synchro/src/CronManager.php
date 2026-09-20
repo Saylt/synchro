@@ -15,6 +15,8 @@ class CronManager
 {
     const TABLE_NAME = 'synchro_cron_scripts';
 
+    const METRICS_TABLE_NAME = 'synchro_cron_task_metrics';
+
     const RUN_MODE_PERIODIC = 'periodic';
 
     const RUN_MODE_ONCE = 'once';
@@ -376,7 +378,7 @@ class CronManager
      *
      * @param array<int> $script_ids Cron task identifiers
      *
-     * @return array<int, array{script_id: int, last_launch: int, inner_status: string, progress_status: string}>
+     * @return array<int, array{script_id: int, last_launch: int, inner_status: string, progress_status: string, execution_time: int, peak_memory_usage: int}>
      */
     public function getCronScriptStatuses(array $script_ids)
     {
@@ -386,9 +388,17 @@ class CronManager
         }
 
         $scripts = $this->database->getHash(
-            'SELECT script_id, last_launch, inner_status, progress_status FROM ?:?p'
-            . ' WHERE script_id IN (?n) AND script IN (?a)',
+            'SELECT script_id, last_launch, inner_status, progress_status,'
+            . ' (SELECT execution_time FROM ?:?p WHERE script_id = s.script_id AND import_id = ?i'
+            . ' ORDER BY metric_id DESC LIMIT 1) AS execution_time,'
+            . ' (SELECT peak_memory_usage FROM ?:?p WHERE script_id = s.script_id AND import_id = ?i'
+            . ' ORDER BY metric_id DESC LIMIT 1) AS peak_memory_usage'
+            . ' FROM ?:?p AS s WHERE script_id IN (?n) AND script IN (?a)',
             'script_id',
+            self::METRICS_TABLE_NAME,
+            0,
+            self::METRICS_TABLE_NAME,
+            0,
             self::TABLE_NAME,
             $script_ids,
             array_keys($this->available_scripts)
@@ -399,10 +409,71 @@ class CronManager
             $script['last_launch'] = (int) $script['last_launch'];
             $script['inner_status'] = (string) $script['inner_status'];
             $script['progress_status'] = (string) $script['progress_status'];
+            $script['execution_time'] = isset($script['execution_time']) ? (int) $script['execution_time'] : 0;
+            $script['peak_memory_usage'] = isset($script['peak_memory_usage'])
+                ? (int) $script['peak_memory_usage']
+                : 0;
         }
         unset($script);
 
         return $scripts;
+    }
+
+    /**
+     * Gets the latest top-level metric for each requested cron task.
+     *
+     * @param array<int> $script_ids Cron task identifiers
+     *
+     * @return array<int, array<string, int|string>>
+     */
+    public function getLatestTaskMetrics(array $script_ids)
+    {
+        return $this->getLatestMetrics($script_ids, 'script_id', 0);
+    }
+
+    /**
+     * Gets the latest metric for each requested child import process.
+     *
+     * @param array<int> $import_ids Child import process identifiers
+     *
+     * @return array<int, array<string, int|string>>
+     */
+    public function getLatestProcessMetrics(array $import_ids)
+    {
+        return $this->getLatestMetrics($import_ids, 'import_id', null);
+    }
+
+    /**
+     * Gets summary values and recent top-level metrics for one cron task.
+     *
+     * @param int $script_id Cron task identifier
+     *
+     * @return array{summary: array<string, int|string>, history: array<int, array<string, int|string>>}
+     */
+    public function getTaskMetricData($script_id)
+    {
+        $summary = $this->database->getRow(
+            'SELECT COUNT(*) AS runs, COALESCE(SUM(execution_time), 0) AS execution_time,'
+            . ' COALESCE(MAX(peak_memory_usage), 0) AS peak_memory_usage'
+            . ' FROM ?:?p WHERE script_id = ?i AND import_id = ?i AND completed_at != ?i',
+            self::METRICS_TABLE_NAME,
+            $script_id,
+            0,
+            0
+        );
+        $history = $this->database->getArray(
+            'SELECT * FROM ?:?p WHERE script_id = ?i AND import_id = ?i'
+            . ' ORDER BY metric_id DESC LIMIT ?i',
+            self::METRICS_TABLE_NAME,
+            $script_id,
+            0,
+            50
+        );
+
+        return [
+            'summary' => $summary ?: ['runs' => 0, 'execution_time' => 0, 'peak_memory_usage' => 0],
+            'history' => $history,
+        ];
     }
 
     /**
@@ -447,11 +518,179 @@ class CronManager
             return false;
         }
 
+        $this->database->query(
+            'DELETE FROM ?:?p WHERE script_id = ?i',
+            self::METRICS_TABLE_NAME,
+            $script_id
+        );
+
         return $this->database->query(
             'DELETE FROM ?:?p WHERE script_id = ?i AND script IN (?a)',
             self::TABLE_NAME,
             $script_id,
             array_keys($this->available_scripts)
+        );
+    }
+
+    /**
+     * Starts metrics collection for one cron task run.
+     *
+     * @param int $script_id Cron task identifier
+     *
+     * @return int Metric identifier
+     */
+    public function startTaskMetric($script_id)
+    {
+        return (int) $this->database->query(
+            'INSERT INTO ?:?p ?e',
+            self::METRICS_TABLE_NAME,
+            [
+                'script_id'  => (int) $script_id,
+                'started_at' => $this->getMetricTimestamp(),
+            ]
+        );
+    }
+
+    /**
+     * Starts metrics collection for one child import process attempt.
+     *
+     * @param int $script_id Cron task identifier
+     * @param int $import_id Child import process identifier
+     *
+     * @return int Metric identifier, or zero when the parent task has no active metric
+     */
+    public function startProcessMetric($script_id, $import_id)
+    {
+        $parent_metric_id = (int) $this->database->getField(
+            'SELECT metric_id FROM ?:?p WHERE script_id = ?i AND import_id = ?i'
+            . ' AND completed_at = ?i ORDER BY metric_id DESC LIMIT 1',
+            self::METRICS_TABLE_NAME,
+            $script_id,
+            0,
+            0
+        );
+        if (!$parent_metric_id) {
+            return 0;
+        }
+
+        return (int) $this->database->query(
+            'INSERT INTO ?:?p ?e',
+            self::METRICS_TABLE_NAME,
+            [
+                'script_id'        => (int) $script_id,
+                'import_id'        => (int) $import_id,
+                'parent_metric_id' => $parent_metric_id,
+                'started_at'       => $this->getMetricTimestamp(),
+            ]
+        );
+    }
+
+    /**
+     * Records peak memory used by the active cron task run.
+     *
+     * @param int      $script_id         Cron task identifier
+     * @param int|null $peak_memory_usage Peak memory in bytes
+     *
+     * @return bool
+     */
+    public function reportTaskPeakMemory($script_id, $peak_memory_usage = null)
+    {
+        return (bool) $this->database->query(
+            'UPDATE ?:?p SET peak_memory_usage = GREATEST(peak_memory_usage, ?i)'
+            . ' WHERE script_id = ?i AND import_id = ?i AND completed_at = ?i',
+            self::METRICS_TABLE_NAME,
+            $peak_memory_usage === null ? memory_get_peak_usage(true) : max(0, (int) $peak_memory_usage),
+            $script_id,
+            0,
+            0
+        );
+    }
+
+    /**
+     * Finishes metrics collection for one child import process attempt.
+     *
+     * @param int      $metric_id         Metric identifier
+     * @param string   $status            Process result status
+     * @param int|null $peak_memory_usage Peak memory in bytes
+     *
+     * @return bool
+     */
+    public function finishProcessMetric($metric_id, $status, $peak_memory_usage = null)
+    {
+        if (!$metric_id) {
+            return false;
+        }
+
+        $timestamp = $this->getMetricTimestamp();
+        $peak_memory_usage = $peak_memory_usage === null
+            ? memory_get_peak_usage(true)
+            : max(0, (int) $peak_memory_usage);
+        $is_finished = (bool) $this->database->query(
+            'UPDATE ?:?p SET status = ?s, completed_at = ?i, execution_time = ?i - started_at,'
+            . ' peak_memory_usage = GREATEST(peak_memory_usage, ?i)'
+            . ' WHERE metric_id = ?i AND import_id != ?i AND completed_at = ?i',
+            self::METRICS_TABLE_NAME,
+            $status,
+            $timestamp,
+            $timestamp,
+            $peak_memory_usage,
+            $metric_id,
+            0,
+            0
+        );
+        if (!$is_finished) {
+            return false;
+        }
+
+        $this->database->query(
+            'UPDATE ?:?p AS parent INNER JOIN ?:?p AS child ON child.parent_metric_id = parent.metric_id'
+            . ' SET parent.peak_memory_usage = GREATEST(parent.peak_memory_usage, child.peak_memory_usage)'
+            . ' WHERE child.metric_id = ?i AND parent.completed_at = ?i',
+            self::METRICS_TABLE_NAME,
+            self::METRICS_TABLE_NAME,
+            $metric_id,
+            0
+        );
+
+        return true;
+    }
+
+    /**
+     * Finishes the active top-level cron task metric when the task is final.
+     *
+     * @param int $script_id Cron task identifier
+     *
+     * @return bool
+     */
+    public function finishTaskMetric($script_id)
+    {
+        $metric_id = (int) $this->database->getField(
+            'SELECT metric_id FROM ?:?p WHERE script_id = ?i AND import_id = ?i'
+            . ' AND completed_at = ?i ORDER BY metric_id DESC LIMIT 1',
+            self::METRICS_TABLE_NAME,
+            $script_id,
+            0,
+            0
+        );
+        if (!$metric_id) {
+            return false;
+        }
+
+        $timestamp = $this->getMetricTimestamp();
+
+        return (bool) $this->database->query(
+            'UPDATE ?:?p AS metric INNER JOIN ?:?p AS script ON script.script_id = metric.script_id'
+            . ' SET metric.status = script.inner_status, metric.completed_at = ?i,'
+            . ' metric.execution_time = ?i - metric.started_at'
+            . ' WHERE metric.metric_id = ?i AND metric.completed_at = ?i'
+            . ' AND script.inner_status IN (?a)',
+            self::METRICS_TABLE_NAME,
+            self::TABLE_NAME,
+            $timestamp,
+            $timestamp,
+            $metric_id,
+            0,
+            ['scheduled', 'completed', 'partial_success', 'failed', 'cancelled']
         );
     }
 
@@ -502,6 +741,8 @@ class CronManager
                 return false;
             }
 
+            $this->startTaskMetric((int) $script['script_id']);
+
             $start_time = time();
             $command = $this->prepareScript(
                 (string) $script['script'],
@@ -539,6 +780,7 @@ class CronManager
                     $script['script_id'],
                     ['in_progress', 'stopping']
                 );
+                $this->finishTaskMetric((int) $script['script_id']);
             }
             $lock->release();
         }
@@ -846,6 +1088,7 @@ class CronManager
             ['waiting_children', 'stopping']
         );
         if ($is_finalized && isset($script['script'])) {
+            $this->finishTaskMetric($script_id);
             $this->logging->info((string) $script['script'], __('synchro.task_execution_finished'), [
                 'execution_time' => max(0, TIME - (int) $script['last_launch']),
                 'result_status'  => $result_status,
@@ -1185,6 +1428,96 @@ class CronManager
         }
 
         return $this->prepareCommand($arguments);
+    }
+
+    /**
+     * Gets the current Unix timestamp with millisecond precision.
+     *
+     * @return int
+     */
+    private function getMetricTimestamp()
+    {
+        return (int) floor(microtime(true) * 1000);
+    }
+
+    /**
+     * Formats a metric duration for the administration panel.
+     *
+     * @param int $milliseconds Duration in milliseconds
+     *
+     * @return string
+     */
+    public function formatExecutionTime($milliseconds)
+    {
+        $milliseconds = max(0, (int) $milliseconds);
+        if (!$milliseconds) {
+            return '—';
+        }
+        if ($milliseconds < 1000) {
+            return $milliseconds . ' ms';
+        }
+        if ($milliseconds < 60000) {
+            return round($milliseconds / 1000, 2) . ' s';
+        }
+
+        return floor($milliseconds / 60000) . ' min ' . round(($milliseconds % 60000) / 1000) . ' s';
+    }
+
+    /**
+     * Formats peak memory usage for the administration panel.
+     *
+     * @param int $bytes Memory usage in bytes
+     *
+     * @return string
+     */
+    public function formatMemoryUsage($bytes)
+    {
+        $bytes = max(0, (int) $bytes);
+        if (!$bytes) {
+            return '—';
+        }
+
+        $units = ['B', 'KB', 'MB', 'GB'];
+        $unit = 0;
+        while ($bytes >= 1024 && $unit < count($units) - 1) {
+            $bytes /= 1024;
+            $unit++;
+        }
+
+        return round($bytes, $unit ? 2 : 0) . ' ' . $units[$unit];
+    }
+
+    /**
+     * Gets the latest metrics keyed by one metric column.
+     *
+     * @param array<int> $ids       Script or process identifiers
+     * @param string     $key_field Metric key column
+     * @param int|null   $import_id Required import identifier, or null for process metrics
+     *
+     * @return array<int, array<string, int|string>>
+     */
+    private function getLatestMetrics(array $ids, $key_field, $import_id)
+    {
+        $ids = array_values(array_filter(array_map('intval', $ids)));
+        if (!$ids) {
+            return [];
+        }
+
+        $condition = $import_id === null ? '1 = 1' : 'import_id = ?i';
+        $params = [self::METRICS_TABLE_NAME, self::METRICS_TABLE_NAME, $ids];
+        if ($import_id !== null) {
+            $params[] = $import_id;
+        }
+
+        return $this->database->getHash(
+            'SELECT metrics.* FROM ?:?p AS metrics INNER JOIN ('
+            . ' SELECT ' . $key_field . ', MAX(metric_id) AS metric_id FROM ?:?p'
+            . ' WHERE ' . $key_field . ' IN (?n) AND ' . $condition
+            . ' GROUP BY ' . $key_field
+            . ' ) AS latest ON latest.metric_id = metrics.metric_id',
+            $key_field,
+            ...$params
+        );
     }
 
     /**

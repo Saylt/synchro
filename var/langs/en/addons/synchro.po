@@ -516,6 +516,26 @@ msgctxt "Languages::synchro.feature_mapping_description"
 msgid "Select one or more imported features and map them to one store feature, create a new store feature, or skip them."
 msgstr "Select one or more imported features and map them to one store feature, create a new store feature, or skip them."
 
+msgctxt "Languages::synchro.feature_mapping_status"
+msgid "Mapping status"
+msgstr "Mapping status"
+
+msgctxt "Languages::synchro.feature_mapping_status_all"
+msgid "All"
+msgstr "All"
+
+msgctxt "Languages::synchro.feature_mapping_status_mapped"
+msgid "Mapped"
+msgstr "Mapped"
+
+msgctxt "Languages::synchro.feature_mapping_status_unmapped"
+msgid "Not mapped"
+msgstr "Not mapped"
+
+msgctxt "Languages::synchro.feature_mapping_status_skipped"
+msgid "Skipped"
+msgstr "Skipped"
+
 msgctxt "Languages::synchro.product_features"
 msgid "Product features"
 msgstr "Product features"
@@ -623,6 +643,10 @@ msgstr "Variant [value] could not be prepared for store feature #[feature_id]."
 msgctxt "Languages::synchro.product_import_error.feature_conflict"
 msgid "Product [external_id] contains conflicting values for store feature #[feature_id]."
 msgstr "Product [external_id] contains conflicting values for store feature #[feature_id]."
+
+msgctxt "Languages::synchro.product_import_error.source_error"
+msgid "Product [external_id] was skipped because the source API returned an error: [error]"
+msgstr "Product [external_id] was skipped because the source API returned an error: [error]"
 
 msgctxt "Languages::synchro.product_import_error.feature_mapping_not_found"
 msgid "Product [external_id] references imported feature [feature_external_id] without a mapping."
@@ -755,6 +779,22 @@ msgstr "[items] items, up to [processes] parallel processes"
 msgctxt "Languages::synchro.process_details"
 msgid "Process"
 msgstr "Process"
+
+msgctxt "Languages::synchro.execution_time"
+msgid "Execution time"
+msgstr "Execution time"
+
+msgctxt "Languages::synchro.peak_memory_usage"
+msgid "Peak memory usage"
+msgstr "Peak memory usage"
+
+msgctxt "Languages::synchro.total_execution_time"
+msgid "Total execution time"
+msgstr "Total execution time"
+
+msgctxt "Languages::synchro.run_history"
+msgid "Run history"
+msgstr "Run history"
 
 msgctxt "Languages::synchro.api_pages_range"
 msgid "API pages [from]–[to]"

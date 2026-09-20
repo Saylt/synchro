@@ -36,8 +36,11 @@ class Installer implements InstallerInterface
     public function onInstall()
     {
         $this->createCronScriptsTable();
+        $this->createCronTaskMetricsTable();
         $this->createImportsTable();
         $this->createImportEntitiesTable();
+        $this->createImportProductFeaturesTable();
+        $this->createImportProductFeatureVariantsTable();
         $this->createImportEntityMapTable();
         $this->createProductFeatureMappingsTable();
         $this->createLogsTable();
@@ -50,8 +53,11 @@ class Installer implements InstallerInterface
     public function onUninstall()
     {
         db_query('DROP TABLE IF EXISTS ?:synchro_cron_scripts');
+        db_query('DROP TABLE IF EXISTS ?:synchro_cron_task_metrics');
         db_query('DROP TABLE IF EXISTS ?:synchro_product_feature_mappings');
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entity_map');
+        db_query('DROP TABLE IF EXISTS ?:synchro_import_product_feature_variants');
+        db_query('DROP TABLE IF EXISTS ?:synchro_import_product_features');
         db_query('DROP TABLE IF EXISTS ?:synchro_import_entities');
         db_query('DROP TABLE IF EXISTS ?:synchro_imports');
         db_query('DROP TABLE IF EXISTS ?:synchro_logs');
@@ -152,6 +158,7 @@ CREATE TABLE IF NOT EXISTS ?:synchro_imports (
     company_id int(11) unsigned NOT NULL DEFAULT '0',
     entity_type varchar(64) NOT NULL DEFAULT '',
     source_type enum('full', 'test') NOT NULL DEFAULT 'full',
+    collect_product_features char(1) NOT NULL DEFAULT 'N',
     process_group int(11) unsigned NOT NULL DEFAULT '0',
     process_stage enum('fetch', 'prepare', 'apply', 'finalize') NOT NULL DEFAULT 'fetch',
     status enum(
@@ -182,6 +189,33 @@ SQL;
     }
 
     /**
+     * Creates the table that stores cron task execution metrics.
+     *
+     * @return void
+     */
+    protected function createCronTaskMetricsTable()
+    {
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_cron_task_metrics (
+    metric_id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+    script_id int(11) unsigned NOT NULL DEFAULT '0',
+    import_id int(11) unsigned NOT NULL DEFAULT '0',
+    parent_metric_id bigint(20) unsigned NOT NULL DEFAULT '0',
+    status varchar(32) NOT NULL DEFAULT '',
+    started_at bigint(20) unsigned NOT NULL DEFAULT '0',
+    completed_at bigint(20) unsigned NOT NULL DEFAULT '0',
+    execution_time bigint(20) unsigned NOT NULL DEFAULT '0',
+    peak_memory_usage bigint(20) unsigned NOT NULL DEFAULT '0',
+    PRIMARY KEY (metric_id),
+    KEY idx_script_import_metric (script_id, import_id, metric_id),
+    KEY idx_parent_metric (parent_metric_id, metric_id)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
+
+        db_query($query);
+    }
+
+    /**
      * Creates the table that stores normalized entities before importing them into CS-Cart.
      *
      * @return void
@@ -201,6 +235,49 @@ CREATE TABLE IF NOT EXISTS ?:synchro_import_entities (
     PRIMARY KEY (import_id, entity_type, entity_id),
     KEY idx_entity_type (company_id, entity_type, import_id),
     KEY idx_application_batch (import_id, entity_type, application_level, entity_id)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
+
+        db_query($query);
+    }
+
+    /**
+     * Creates the table that stores one normalized product-feature snapshot.
+     *
+     * @return void
+     */
+    protected function createImportProductFeaturesTable()
+    {
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_import_product_features (
+    import_id int(11) unsigned NOT NULL DEFAULT '0',
+    external_feature_id varchar(128) NOT NULL DEFAULT '',
+    name varchar(255) NOT NULL DEFAULT '',
+    group_id int(11) unsigned DEFAULT NULL,
+    group_name varchar(255) DEFAULT NULL,
+    position int(11) unsigned DEFAULT NULL,
+    PRIMARY KEY (import_id, external_feature_id)
+) ENGINE=InnoDB DEFAULT CHARSET=UTF8
+SQL;
+
+        db_query($query);
+    }
+
+    /**
+     * Creates the table that stores variants for normalized product-feature snapshots.
+     *
+     * @return void
+     */
+    protected function createImportProductFeatureVariantsTable()
+    {
+        $query = <<<'SQL'
+CREATE TABLE IF NOT EXISTS ?:synchro_import_product_feature_variants (
+    import_id int(11) unsigned NOT NULL DEFAULT '0',
+    external_feature_id varchar(128) NOT NULL DEFAULT '',
+    external_variant_id varchar(128) NOT NULL DEFAULT '',
+    value text NOT NULL,
+    PRIMARY KEY (import_id, external_variant_id),
+    KEY idx_import_feature (import_id, external_feature_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=UTF8
 SQL;
 

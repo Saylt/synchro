@@ -32,6 +32,8 @@ if ($mode === 'refresh_statuses') {
             $status['last_launch'] .= ' (' . __('synchro.' . $status['inner_status']) . ')';
         }
         $status['progress_status'] = $status['progress_status'] ?: '—';
+        $status['metric'] = $cron_manager->formatExecutionTime($status['execution_time'])
+            . ', ' . $cron_manager->formatMemoryUsage($status['peak_memory_usage']);
     }
     unset($status);
 
@@ -79,6 +81,16 @@ if ($mode === 'manage') {
         Registry::get('settings.Appearance.admin_elements_per_page')
     );
     $scripts = $cron_manager->orderCronScriptsByDependencies($scripts);
+    $metrics = $cron_manager->getLatestTaskMetrics(array_map('intval', array_keys($scripts)));
+    foreach ($scripts as $script_id => &$script) {
+        $metric = isset($metrics[$script_id]) ? $metrics[$script_id] : [];
+        $script['metric'] = $cron_manager->formatExecutionTime(
+            isset($metric['execution_time']) ? $metric['execution_time'] : 0
+        ) . ', ' . $cron_manager->formatMemoryUsage(
+            isset($metric['peak_memory_usage']) ? $metric['peak_memory_usage'] : 0
+        );
+    }
+    unset($script);
     $view->assign('scripts', $scripts);
     $view->assign('search', $search);
     $view->assign(
@@ -88,6 +100,24 @@ if ($mode === 'manage') {
 } elseif ($mode === 'update') {
     if ($request_script_id) {
         $view->assign('script_data', $cron_manager->getCronScriptData($request_script_id));
+        $metric_data = $cron_manager->getTaskMetricData($request_script_id);
+        $metric_data['summary']['execution_time_formatted'] = $cron_manager->formatExecutionTime(
+            $metric_data['summary']['execution_time']
+        );
+        $metric_data['summary']['peak_memory_usage_formatted'] = $cron_manager->formatMemoryUsage(
+            $metric_data['summary']['peak_memory_usage']
+        );
+        foreach ($metric_data['history'] as &$metric) {
+            $metric['execution_time_formatted'] = $cron_manager->formatExecutionTime($metric['execution_time']);
+            $metric['peak_memory_usage_formatted'] = $cron_manager->formatMemoryUsage($metric['peak_memory_usage']);
+            $metric['started_at_formatted'] = fn_date_format(
+                (int) floor((int) $metric['started_at'] / 1000),
+                Registry::get('settings.Appearance.date_format')
+                    . ', ' . Registry::get('settings.Appearance.time_format')
+            );
+        }
+        unset($metric);
+        $view->assign('metric_data', $metric_data);
     }
 } elseif ($mode === 'delete') {
     $script = $cron_manager->getCronScriptData($request_script_id);
