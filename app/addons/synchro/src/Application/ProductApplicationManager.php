@@ -8,9 +8,12 @@ use Tygh\Addons\Synchro\Commands\ImportDataCommand;
 use Tygh\Addons\Synchro\Dto\ProductDto;
 use Tygh\Addons\Synchro\Importers\ProductFeatureImporter;
 use Tygh\Addons\Synchro\Importers\ProductImporter;
+use Tygh\Addons\Synchro\Logging;
+use Tygh\Addons\Synchro\ProductFeatureMappingManager;
 use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ImportEntityRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
+use Tygh\Enum\ProductFeatures;
 
 /**
  * Applies staged product DTOs to CS-Cart.
@@ -24,6 +27,8 @@ class ProductApplicationManager
     const MODE_ACTUALIZE = 'actualize';
 
     const FEATURE_BATCH_SIZE = 100;
+
+    const LOG_SOURCE = 'synchro_import.apply_products';
 
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityRepository */
     private $repository;
@@ -40,25 +45,37 @@ class ProductApplicationManager
     /** @var \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository */
     private $mapping_repository;
 
+    /** @var \Tygh\Addons\Synchro\ProductFeatureMappingManager */
+    private $feature_mapping_manager;
+
+    /** @var \Tygh\Addons\Synchro\Logging */
+    private $logging;
+
     /**
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository             $repository                  Staged entity repository
-     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository    $feature_snapshot_repository Product feature snapshots
-     * @param \Tygh\Addons\Synchro\Importers\ProductFeatureImporter                $feature_importer            Product feature importer
-     * @param \Tygh\Addons\Synchro\Importers\ProductImporter                       $product_importer            Product importer
-     * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository            $mapping_repository          Entity mapping repository
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityRepository           $repository                  Staged entity repository
+     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository $feature_snapshot_repository Product feature snapshots
+     * @param \Tygh\Addons\Synchro\Importers\ProductFeatureImporter            $feature_importer            Product feature importer
+     * @param \Tygh\Addons\Synchro\Importers\ProductImporter                   $product_importer            Product importer
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository        $mapping_repository          Entity mapping repository
+     * @param \Tygh\Addons\Synchro\ProductFeatureMappingManager                $feature_mapping_manager     Product feature mapping manager
+     * @param \Tygh\Addons\Synchro\Logging                                     $logging                     Synchro event logger
      */
     public function __construct(
         ImportEntityRepository $repository,
         ProductFeatureSnapshotRepository $feature_snapshot_repository,
         ProductFeatureImporter $feature_importer,
         ProductImporter $product_importer,
-        ImportEntityMapRepository $mapping_repository
+        ImportEntityMapRepository $mapping_repository,
+        ProductFeatureMappingManager $feature_mapping_manager,
+        Logging $logging
     ) {
         $this->repository = $repository;
         $this->feature_snapshot_repository = $feature_snapshot_repository;
         $this->feature_importer = $feature_importer;
         $this->product_importer = $product_importer;
         $this->mapping_repository = $mapping_repository;
+        $this->feature_mapping_manager = $feature_mapping_manager;
+        $this->logging = $logging;
     }
 
     /**
@@ -79,7 +96,7 @@ class ProductApplicationManager
 
         switch ($process['process_stage']) {
             case EntityApplicationPlanBuilder::STAGE_PREPARE:
-                return $this->prepare($staging_import);
+                return $this->prepare($staging_import, $mode);
             case EntityApplicationPlanBuilder::STAGE_APPLY:
                 return $this->applyRange($process, $staging_import, $mode);
             case EntityApplicationPlanBuilder::STAGE_FINALIZE:
@@ -93,11 +110,15 @@ class ProductApplicationManager
      * Imports product features before parallel product processes start.
      *
      * @param array<string, int|string> $staging_import Staging import
+     * @param string                    $mode           Application mode
      *
      * @return int
      */
-    private function prepare(array $staging_import)
+    private function prepare(array $staging_import, $mode)
     {
+        if ($mode === self::MODE_FULL) {
+            $this->createMissingFeatureMappings($staging_import);
+        }
         $after_external_feature_id = '';
 
         while (true) {
@@ -117,6 +138,55 @@ class ProductApplicationManager
         }
 
         return 0;
+    }
+
+    /**
+     * Creates local text selectbox features for imported features without a mapping.
+     *
+     * Explicitly skipped features already have a mapping row and are excluded by the
+     * snapshot query.
+     *
+     * @param array<string, int|string> $staging_import Staging import
+     *
+     * @return void
+     */
+    private function createMissingFeatureMappings(array $staging_import)
+    {
+        $after_external_feature_id = '';
+
+        while (true) {
+            $features = $this->feature_snapshot_repository->findUnmappedFeatureBatch(
+                (int) $staging_import['import_id'],
+                (int) $staging_import['company_id'],
+                $after_external_feature_id,
+                self::FEATURE_BATCH_SIZE
+            );
+            if (!$features) {
+                return;
+            }
+
+            foreach ($features as $feature) {
+                $result = $this->feature_mapping_manager->createAndMapSnapshot(
+                    (int) $staging_import['company_id'],
+                    (int) $staging_import['import_id'],
+                    [$feature->getEntityId()],
+                    $feature->name,
+                    ProductFeatures::TEXT_SELECTBOX
+                );
+                if (!$result->isSuccess()) {
+                    $this->logging->warning(
+                        self::LOG_SOURCE,
+                        __('synchro.product_feature_mapping_auto_creation_failed', [
+                            '[external_id]' => $feature->getEntityId(),
+                            '[error]'       => $result->getFirstError(),
+                        ])
+                    );
+                }
+            }
+
+            $last_feature = $features[count($features) - 1];
+            $after_external_feature_id = $last_feature->getEntityId();
+        }
     }
 
     /**

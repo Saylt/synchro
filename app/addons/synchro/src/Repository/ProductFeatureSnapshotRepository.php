@@ -214,6 +214,37 @@ class ProductFeatureSnapshotRepository
     }
 
     /**
+     * Reads one keyset batch of features that have not been mapped or skipped.
+     *
+     * @param int    $import_id                 Published snapshot import identifier
+     * @param int    $company_id                Company identifier
+     * @param string $after_external_feature_id Exclusive external feature identifier cursor
+     * @param int    $limit                     Maximum number of features
+     *
+     * @return array<\Tygh\Addons\Synchro\Dto\ProductFeatureDto>
+     */
+    public function findUnmappedFeatureBatch($import_id, $company_id, $after_external_feature_id, $limit)
+    {
+        $feature_rows = $this->database->getArray(
+            'SELECT features.external_feature_id, features.name, features.group_id, features.group_name, features.position'
+            . ' FROM ?:?p AS features'
+            . ' LEFT JOIN ?:?p AS mappings ON mappings.company_id = ?i'
+            . ' AND mappings.external_feature_id = features.external_feature_id'
+            . ' WHERE features.import_id = ?i AND mappings.external_feature_id IS NULL'
+            . ' AND features.external_feature_id > ?s'
+            . ' ORDER BY features.external_feature_id LIMIT ?i',
+            self::FEATURES_TABLE_NAME,
+            ProductFeatureMappingRepository::TABLE_NAME,
+            $company_id,
+            $import_id,
+            $after_external_feature_id,
+            $limit
+        );
+
+        return $this->hydrateFeatures($import_id, $feature_rows);
+    }
+
+    /**
      * Finds the current product-feature snapshot for mapping.
      *
      * A successful full import always wins over a test snapshot, even when

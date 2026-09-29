@@ -202,7 +202,9 @@ class ServiceProvider implements ServiceProviderInterface
                 $app['addons.synchro.repository.product_feature_snapshot'],
                 $app['addons.synchro.importers.product_feature'],
                 $app['addons.synchro.importers.product'],
-                $app['addons.synchro.repository.import_entity_map']
+                $app['addons.synchro.repository.import_entity_map'],
+                $app['addons.synchro.product_feature_mapping_manager'],
+                $app['addons.synchro.logging']
             );
         };
 

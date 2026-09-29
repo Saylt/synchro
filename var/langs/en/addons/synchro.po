@@ -580,6 +580,10 @@ msgctxt "Languages::synchro.feature_mapping_creation_failed"
 msgid "The product feature could not be created."
 msgstr "The product feature could not be created."
 
+msgctxt "Languages::synchro.product_feature_mapping_auto_creation_failed"
+msgid "Imported feature [external_id] could not be created automatically: [error]"
+msgstr "Imported feature [external_id] could not be created automatically: [error]"
+
 msgctxt "Languages::synchro.feature_mapping_save_failed"
 msgid "The selected feature mappings could not be saved."
 msgstr "The selected feature mappings could not be saved."
