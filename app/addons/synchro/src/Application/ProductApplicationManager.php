@@ -166,12 +166,45 @@ class ProductApplicationManager
             }
 
             foreach ($features as $feature) {
+                $parent_id = 0;
+                $group_name = trim((string) $feature->group_name);
+                $group_name_suffix = $group_name === '' ? '' : ' (' . $group_name . ')';
+                if ($feature->group_id === null || (int) $feature->group_id <= 0) {
+                    $this->logging->warning(
+                        self::LOG_SOURCE,
+                        __('synchro.product_feature_group_invalid_id', [
+                            '[external_id]' => $feature->getEntityId(),
+                            '[group_id]'    => $feature->group_id,
+                            '[group_name]'  => $group_name_suffix,
+                        ])
+                    );
+                } else {
+                    $group_result = $this->feature_mapping_manager->getOrCreateGroup(
+                        (int) $staging_import['company_id'],
+                        $feature->group_id,
+                        (string) $feature->group_name
+                    );
+                    if ($group_result->isSuccess()) {
+                        $parent_id = (int) $group_result->getData();
+                    } else {
+                        $this->logging->warning(
+                            self::LOG_SOURCE,
+                            __('synchro.product_feature_group_preparation_failed', [
+                                '[external_id]' => $feature->getEntityId(),
+                                '[group_id]'    => $feature->group_id,
+                                '[group_name]'  => $group_name_suffix,
+                                '[error]'       => $group_result->getFirstError(),
+                            ])
+                        );
+                    }
+                }
                 $result = $this->feature_mapping_manager->createAndMapSnapshot(
                     (int) $staging_import['company_id'],
                     (int) $staging_import['import_id'],
                     [$feature->getEntityId()],
                     $feature->name,
-                    ProductFeatures::TEXT_SELECTBOX
+                    ProductFeatures::TEXT_SELECTBOX,
+                    $parent_id
                 );
                 if (!$result->isSuccess()) {
                     $this->logging->warning(

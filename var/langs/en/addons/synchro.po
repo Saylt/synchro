@@ -580,9 +580,25 @@ msgctxt "Languages::synchro.feature_mapping_creation_failed"
 msgid "The product feature could not be created."
 msgstr "The product feature could not be created."
 
+msgctxt "Languages::synchro.feature_group_name_required"
+msgid "Enter a name for the imported feature group."
+msgstr "Enter a name for the imported feature group."
+
+msgctxt "Languages::synchro.feature_group_creation_failed"
+msgid "The imported feature group could not be created."
+msgstr "The imported feature group could not be created."
+
 msgctxt "Languages::synchro.product_feature_mapping_auto_creation_failed"
 msgid "Imported feature [external_id] could not be created automatically: [error]"
 msgstr "Imported feature [external_id] could not be created automatically: [error]"
+
+msgctxt "Languages::synchro.product_feature_group_invalid_id"
+msgid "Imported feature [external_id] has an invalid group ID [group_id][group_name] and will be created in the root."
+msgstr "Imported feature [external_id] has an invalid group ID [group_id][group_name] and will be created in the root."
+
+msgctxt "Languages::synchro.product_feature_group_preparation_failed"
+msgid "Feature group [group_id][group_name] for imported feature [external_id] could not be prepared: [error]. The feature will be created in the root."
+msgstr "Feature group [group_id][group_name] for imported feature [external_id] could not be prepared: [error]. The feature will be created in the root."
 
 msgctxt "Languages::synchro.feature_mapping_save_failed"
 msgid "The selected feature mappings could not be saved."

@@ -4,6 +4,7 @@ namespace Tygh\Addons\Synchro;
 
 use Throwable;
 use Tygh\Addons\Synchro\Dto\ProductFeatureDto;
+use Tygh\Addons\Synchro\Repository\ImportEntityMapRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository;
 use Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository;
 use Tygh\Common\OperationResult;
@@ -16,6 +17,8 @@ use Tygh\Enum\ProductFeatures;
  */
 class ProductFeatureMappingManager
 {
+    const FEATURE_GROUP_ENTITY_TYPE = 'feature_groups';
+
     /** @var \Tygh\Database\Connection */
     private $database;
 
@@ -25,20 +28,25 @@ class ProductFeatureMappingManager
     /** @var \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository|null */
     private $snapshot_repository;
 
+    /** @var \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository */
+    private $entity_map_repository;
+
     /**
-     * @param \Tygh\Database\Connection                                       $database           Database connection
-     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository $mapping_repository Mapping repository
-     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository|null $snapshot_repository Imported snapshot repository
+     * @param \Tygh\Database\Connection                                             $database              Database connection
+     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureMappingRepository       $mapping_repository    Feature mapping repository
+     * @param \Tygh\Addons\Synchro\Repository\ImportEntityMapRepository             $entity_map_repository Generic entity mapping repository
+     * @param \Tygh\Addons\Synchro\Repository\ProductFeatureSnapshotRepository|null $snapshot_repository   Imported snapshot repository
      */
     public function __construct(
         Connection $database,
         ProductFeatureMappingRepository $mapping_repository,
+        ImportEntityMapRepository $entity_map_repository,
         ProductFeatureSnapshotRepository $snapshot_repository = null
-    )
-    {
+    ) {
         $this->database = $database;
         $this->mapping_repository = $mapping_repository;
         $this->snapshot_repository = $snapshot_repository;
+        $this->entity_map_repository = $entity_map_repository;
     }
 
     /**
@@ -124,6 +132,54 @@ class ProductFeatureMappingManager
     }
 
     /**
+     * Gets an existing local feature group or creates and maps one from API data.
+     *
+     * @param int        $company_id        Company identifier
+     * @param int|string $external_group_id External group identifier
+     * @param string     $group_name        Group name
+     *
+     * @return \Tygh\Common\OperationResult
+     */
+    public function getOrCreateGroup($company_id, $external_group_id, $group_name)
+    {
+        $external_group_id = (string) (int) $external_group_id;
+        $mapping = $this->entity_map_repository->find(
+            $company_id,
+            self::FEATURE_GROUP_ENTITY_TYPE,
+            $external_group_id
+        );
+        if ($mapping) {
+            return new OperationResult(true, (int) $mapping['local_id']);
+        }
+
+        $group_name = trim($group_name);
+        if ($group_name === '') {
+            return $this->failure('name', __('synchro.feature_group_name_required'));
+        }
+
+        $local_group_id = (int) fn_update_product_feature([
+            'company_id'         => $company_id,
+            'feature_type'       => ProductFeatures::GROUP,
+            'description'        => $group_name,
+            'internal_name'      => $group_name,
+            'display_on_product' => 'Y',
+        ], 'OG');
+        if (!$local_group_id) {
+            return $this->failure('create', __('synchro.feature_group_creation_failed'));
+        }
+
+        $this->entity_map_repository->save(
+            $company_id,
+            self::FEATURE_GROUP_ENTITY_TYPE,
+            $external_group_id,
+            $local_group_id,
+            $group_name
+        );
+
+        return new OperationResult(true, $local_group_id);
+    }
+
+    /**
      * Creates one local feature and maps selected features from a snapshot to it.
      *
      * @param int                      $company_id           Company identifier
@@ -131,6 +187,7 @@ class ProductFeatureMappingManager
      * @param array<array-key, string> $external_feature_ids  Submitted external feature identifiers
      * @param string                   $name                 New feature name
      * @param string                   $feature_type         New local feature type
+     * @param int                      $parent_id            Parent feature group identifier
      *
      * @return \Tygh\Common\OperationResult
      */
@@ -139,7 +196,8 @@ class ProductFeatureMappingManager
         $snapshot_import_id,
         array $external_feature_ids,
         $name,
-        $feature_type = ProductFeatures::TEXT_SELECTBOX
+        $feature_type = ProductFeatures::TEXT_SELECTBOX,
+        $parent_id = 0
     ) {
         $external_feature_ids = $this->getSnapshotSelection($snapshot_import_id, $external_feature_ids);
         if (!$external_feature_ids) {
@@ -156,7 +214,7 @@ class ProductFeatureMappingManager
             'feature_type'    => $feature_type,
             'description'     => $name,
             'internal_name'   => $name,
-            'parent_id'       => 0,
+            'parent_id'       => $parent_id,
             'categories_path' => '',
         ], 0);
         if (!$local_feature_id) {

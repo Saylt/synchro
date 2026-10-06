@@ -129,6 +129,7 @@ class ServiceProvider implements ServiceProviderInterface
             return new ProductFeatureMappingManager(
                 $app['db'],
                 $app['addons.synchro.repository.product_feature_mapping'],
+                $app['addons.synchro.repository.import_entity_map'],
                 $app['addons.synchro.repository.product_feature_snapshot']
             );
         };
